@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Session archive">
+  <rect x="6" y="10" width="52" height="12" rx="3" fill="#2b6cb0"/>
+  <path d="M10 22h44v28a6 6 0 0 1-6 6H16a6 6 0 0 1-6-6V22z" fill="#ebf4ff"/>
+  <path d="M10 22h44v6H10z" fill="#2b6cb0" opacity="0.35"/>
+  <rect x="24" y="33" width="16" height="5" rx="2.5" fill="#2b6cb0"/>
+  <rect x="12" y="14" width="40" height="4" rx="2" fill="#1f4e79" opacity="0.5"/>
+</svg>

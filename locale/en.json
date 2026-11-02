@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session archive management",
+    "description": "Manage archived sessions in Settings: auto-archive, retention, search, restore, and permanent delete."
+  }
+}
