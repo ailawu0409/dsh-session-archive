@@ -113,7 +113,7 @@ async function testDefaultsAndPersistence() {
   await withStateDir(async (dir) => {
     const { service, registered, cleanups } = boot({}, dir)
     assert.equal(registered.length, 1, 'one Typert invocation is registered')
-    assert.equal(registered[0].invocations[0].id, '@local/session-archive#sessionArchive/command')
+    assert.equal(registered[0].invocations[0].id, 'dsh-session-archive#sessionArchive/command')
     assert.equal(registered[0].face, 'host')
 
     const invocation = registered[0].invocations[0]

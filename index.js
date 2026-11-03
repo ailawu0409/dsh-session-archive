@@ -18,7 +18,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const PACKAGE = '@local/session-archive'
+const PACKAGE = 'dsh-session-archive'
 const SERVICE = 'sessionArchive'
 const INVOCATION_ID = `${PACKAGE}#${SERVICE}/command`
 const JSONL_PACKAGE = '@deepseek-ai/dsh-session-persistence-jsonl'

@@ -1,0 +1,14 @@
+node_modules/
+coverage/
+dist/
+plugin-state/
+*.log
+*.tgz
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/

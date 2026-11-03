@@ -1,9 +1,32 @@
 {
-  "name": "@local/session-archive",
+  "name": "dsh-session-archive",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "Session archive management in Settings: auto-archive, restore, and permanent delete.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ailawu0409/dsh-session-archive.git"
+  },
+  "homepage": "https://github.com/ailawu0409/dsh-session-archive#readme",
+  "bugs": {
+    "url": "https://github.com/ailawu0409/dsh-session-archive/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "session-archive",
+    "session-management"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "npm run test:host && npm run test:client",
+    "test:host": "node test/host.test.mjs",
+    "test:client": "node test/client.test.mjs",
+    "check": "node --check index.js && node --check client.js"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",

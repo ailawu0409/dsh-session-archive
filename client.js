@@ -1,11 +1,11 @@
 window.__ModuleLoader__.load({
-  id: '@local/session-archive',
+  id: 'dsh-session-archive',
   factory(require) {
     const React = require('react')
     const h = React.createElement
 
     const NS = 'session-archive'
-    const PACKAGE = '@local/session-archive'
+    const PACKAGE = 'dsh-session-archive'
     const REMOTE_NAMESPACE = 'sessionArchive'
     const SECTION_ID = 'archived-sessions'
     const ALL_PROJECTS = 'all'
@@ -1992,14 +1992,14 @@ window.__ModuleLoader__.load({
             description: 'The action and its payload.',
             codec: {
               mode: 'strict',
-              typeSymbol: '@local/session-archive#SessionArchiveCommandRequest',
+              typeSymbol: 'dsh-session-archive#SessionArchiveCommandRequest',
               create: () => ({}),
             },
           },
         ],
         result: {
           mode: 'strict',
-          typeSymbol: '@local/session-archive#SessionArchiveCommandResult',
+          typeSymbol: 'dsh-session-archive#SessionArchiveCommandResult',
           create: () => ({}),
         },
       }

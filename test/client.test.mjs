@@ -15,7 +15,7 @@ globalThis.window = {
   },
 }
 await import('../client.js')
-assert.equal(loaded.id, '@local/session-archive', 'client module id matches the package name')
+assert.equal(loaded.id, 'dsh-session-archive', 'client module id matches the package name')
 
 const ReactStub = {
   createElement: () => null,
@@ -199,10 +199,10 @@ for (const match of clientSource.matchAll(/\bt\('([^']+)'/g)) {
 
 assert.equal(mounts.length, 1)
 const contribution = mounts[0]
-assert.equal(contribution.package, '@local/session-archive')
+assert.equal(contribution.package, 'dsh-session-archive')
 assert.equal(contribution.descriptors.length, 1)
 const descriptor = contribution.descriptors[0]
-assert.equal(descriptor.id, '@local/session-archive#sessionArchive/command')
+assert.equal(descriptor.id, 'dsh-session-archive#sessionArchive/command')
 assert.equal(descriptor.namespace, 'sessionArchive')
 assert.equal(descriptor.method, 'command')
 assert.equal(descriptor.service, 'sessionArchive')
