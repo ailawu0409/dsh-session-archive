@@ -33,6 +33,7 @@ Use `npm run test:host` or `npm run test:client` for focused iteration, then run
 - Keep the package identity `dsh-session-archive` synchronized across `package.json`, `index.js`, `client.js`, `cordis.patch.yml`, and tests.
 - The Host intentionally imports only Node.js builtins. Do not add imports from DSH packages without verifying the linked-profile resolution model.
 - The Client is loaded through `window.__ModuleLoader__`; do not replace it with a bundler-specific entry point.
+- Register the Settings navigation glyph through the DSH 0.2.2 `settings.section.icon` slot with the same id as the section; never patch the host DOM. Keep the glyph on `currentColor`, and leave the default glyph in place when an older host lacks the slot.
 - Keep Remote actions, payloads, result shapes, and error codes synchronized between Host, Client, and tests.
 - Add regression tests for behavior changes and bug fixes.
 - Update both README languages for user-facing changes. Update `CHANGELOG.md` for release-relevant changes.

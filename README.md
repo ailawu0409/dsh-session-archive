@@ -18,12 +18,14 @@ A community plugin for DeepSeek Harness that adds session archive management to 
 - Search, filter, sort, and group sessions by project.
 - Validate session IDs and stored log identity before permanent deletion.
 - Keep local settings and a size-capped deletion audit log in the DSH profile.
+- Show the plugin's archive glyph in the Settings navigation on DeepSeek Harness 0.2.2 and newer.
 - English and Chinese settings UI.
 
 ## Compatibility
 
-- DeepSeek Harness desktop with profile plugin and Settings extension support.
+- DeepSeek Harness desktop 0.2.2-rc.1 (verified) with profile plugin and Settings extension support. On 0.2.2 and newer, the plugin registers its Settings navigation icon through the official `settings.section.icon` slot; older hosts keep the default glyph without error.
 - Node.js 22 or newer for local development and tests. The initial release was tested with Node.js 24.17.0.
+- The Settings UI is available in English and Chinese. Additional host languages introduced in 0.2.2 fall back to English for this plugin's text.
 - Only install one copy of this plugin. Older development builds used the package name `@local/session-archive`; remove that build before installing this one.
 
 ## Installation

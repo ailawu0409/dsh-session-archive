@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-archive",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Session archive management in Settings: auto-archive, restore, and permanent delete.",
   "license": "MIT",

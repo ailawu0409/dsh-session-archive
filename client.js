@@ -525,18 +525,53 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** Archive-box glyph shared by the session action icon and the Settings nav icon. */
+    const ARCHIVE_GLYPH_PATH = 'M1.75 2.75h10.5v2.25H1.75zM2.5 5v6.25h9V5M5.25 7.75h3.5'
+    /** Requested edge of the Settings navigation glyph when the host omits one. */
+    const NAV_ICON_SIZE = 16
+
     function ArchiveIcon() {
       return h(
         'svg',
         { width: 15, height: 15, viewBox: '0 0 14 14', 'aria-hidden': 'true' },
         h('path', {
-          d: 'M1.75 2.75h10.5v2.25H1.75zM2.5 5v6.25h9V5M5.25 7.75h3.5',
+          d: ARCHIVE_GLYPH_PATH,
           fill: 'none',
           stroke: 'currentColor',
           strokeWidth: 1.3,
           strokeLinecap: 'round',
           strokeLinejoin: 'round',
         }),
+      )
+    }
+
+    /**
+     * Archive glyph for the host's `settings.section.icon` slot (dsh 0.2.2+).
+     *
+     * The registration id must equal the section id; the shell owns the nav
+     * button, label, and icon wrapper and hands this component the requested
+     * pixel size. Inline layout keeps the glyph independent of the section
+     * stylesheet, which is mounted only while the settings page is open.
+     */
+    function SectionNavIcon(props) {
+      const requested = props === null || props === undefined ? undefined : props.size
+      const size = Number.isFinite(requested) && requested > 0 ? Math.round(requested) : NAV_ICON_SIZE
+      return h(
+        'svg',
+        {
+          width: size,
+          height: size,
+          viewBox: '0 0 14 14',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.3,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          'aria-hidden': 'true',
+          focusable: 'false',
+          style: { display: 'block', flex: 'none' },
+        },
+        h('path', { d: ARCHIVE_GLYPH_PATH }),
       )
     }
 
@@ -2041,6 +2076,14 @@ window.__ModuleLoader__.load({
           },
           ArchivedSessionsSection,
         ),
+      )
+
+      // dsh 0.2.2 exposes an official Settings navigation icon slot; the
+      // registration id must match the section id above. Older hosts never
+      // declare the slot, so the callback stays dormant and the shell keeps
+      // its default glyph.
+      ctx.slots.inject('settings.section.icon', () =>
+        ctx.slots.register({ name: 'settings.section.icon', id: SECTION_ID }, SectionNavIcon),
       )
     }
 

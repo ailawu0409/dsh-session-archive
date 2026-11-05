@@ -18,7 +18,7 @@ await import('../client.js')
 assert.equal(loaded.id, 'dsh-session-archive', 'client module id matches the package name')
 
 const ReactStub = {
-  createElement: () => null,
+  createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
   useState: (value) => [value, () => {}],
   useMemo: (factory) => factory(),
   useEffect: () => {},
@@ -137,8 +137,8 @@ const ctx = {
 plugin.apply(ctx)
 await new Promise((resolve) => setTimeout(resolve, 0))
 
-assert.deepEqual(injected, ['settings.section'])
-assert.equal(registrations.length, 1)
+assert.deepEqual(injected, ['settings.section', 'settings.section.icon'])
+assert.equal(registrations.length, 2)
 const registration = registrations[0]
 assert.equal(registration.options.name, 'settings.section')
 assert.equal(registration.options.id, 'archived-sessions')
@@ -147,6 +147,24 @@ assert.equal(registration.options.locale, 'session-archive')
 assert.equal(typeof registration.options.label, 'function')
 assert.equal(typeof registration.options.label(), 'string')
 assert.equal(registration.options.label(), 'session-archive:nav')
+
+const iconRegistration = registrations.find((entry) => entry.options.name === 'settings.section.icon')
+assert.ok(iconRegistration !== undefined, 'the settings navigation icon slot is registered')
+assert.equal(iconRegistration.options.id, registration.options.id, 'the icon id matches the section id')
+assert.equal(typeof iconRegistration.component, 'function')
+const icon = iconRegistration.component({ size: 20, active: true })
+assert.equal(icon.type, 'svg')
+assert.equal(icon.props.width, 20)
+assert.equal(icon.props.height, 20)
+assert.equal(icon.props.viewBox, '0 0 14 14')
+assert.equal(icon.props.stroke, 'currentColor', 'the glyph follows the host theme color')
+assert.equal(icon.props['aria-hidden'], 'true')
+assert.equal(icon.props.style.display, 'block')
+assert.equal(icon.children.length, 1)
+assert.equal(icon.children[0].type, 'path')
+assert.ok(icon.children[0].props.d.includes('M1.75 2.75'))
+assert.equal(iconRegistration.component({}).props.width, 16, 'a missing host size falls back to 16')
+assert.equal(iconRegistration.component({ size: 0 }).props.width, 16, 'an invalid host size falls back to 16')
 
 const injection = registration.options.inject()
 assert.equal(typeof injection.actions.setAutoArchive, 'function')
@@ -281,6 +299,28 @@ const fallbackActions = fallbackRegistrations[0].options.inject().actions
 const fallbackOutcome = await fallbackActions.unarchiveOne('s1')
 assert.equal(fallbackOutcome.ok, false, 'the fallback reports failure when no remote is mounted')
 assert.equal(typeof fallbackOutcome.message, 'string')
+
+// Older hosts never declare settings.section.icon: the injection stays dormant,
+// the section still registers, and loading does not throw.
+const inertRegistrations = []
+const inertCtx = {
+  ...ctx,
+  slots: {
+    inject(key, callback) {
+      if (key === 'settings.section.icon') return () => {}
+      callback()
+      return () => {}
+    },
+    register(options, component) {
+      inertRegistrations.push({ options, component })
+      return () => {}
+    },
+  },
+}
+plugin.apply(inertCtx)
+await new Promise((resolve) => setTimeout(resolve, 0))
+assert.equal(inertRegistrations.length, 1)
+assert.equal(inertRegistrations[0].options.name, 'settings.section')
 
 // Pure UI helpers used by the settings page.
 const {
