@@ -25,7 +25,7 @@ A community plugin for DeepSeek Harness that adds a session archive management s
 
 ## Compatibility
 
-- DeepSeek Harness desktop 0.2.2-rc.1 (verified) with profile plugin and Settings extension support. On 0.2.2 and newer, the plugin registers its Settings navigation icon through the official `settings.section.icon` slot; older hosts keep the default glyph without error.
+- DeepSeek Harness desktop 0.2.2-rc.2 (verified) with profile plugin and Settings extension support. The plugin relies only on contracts that are unchanged since 0.2.2-rc.1, so rc.1 and rc.2 behave identically. On 0.2.2 and newer, the plugin registers its Settings navigation icon through the official `settings.section.icon` slot; older hosts keep the default glyph without error.
 - Node.js 22 or newer for local development and tests. CI runs Node.js 22 and 24; there are no third-party runtime dependencies.
 - The Settings UI is available in English and Chinese. Additional host languages introduced in 0.2.2 fall back to English for this plugin's text.
 - Only install one copy of this plugin. Older development builds used the package name `@local/session-archive`; remove that build before installing this one.

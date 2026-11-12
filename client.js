@@ -333,7 +333,7 @@ window.__ModuleLoader__.load({
 .sa-menuItem{display:flex;align-items:center;width:100%;padding:4px 7px;border:none;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px;text-align:left;cursor:pointer;white-space:nowrap}
 .sa-menuItem:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
 .sa-menuItem:disabled{cursor:not-allowed;opacity:.4}
-.sa-menuDanger{color:var(--dsw-alias-label-error)}
+.sa-menuDanger{color:var(--dsw-alias-state-error-primary)}
 .sa-menuDanger:hover{background:var(--dsw-alias-interactive-bg-hover-danger)}
 .sa-scopeRow{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .sa-scopeGroup{display:inline-flex;align-items:center;gap:6px}
@@ -342,7 +342,7 @@ window.__ModuleLoader__.load({
 .sa-secondaryButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
 .sa-secondaryButton:disabled{cursor:not-allowed;opacity:.4}
 .sa-secondaryButton .sa-pillIcon svg{width:14px;height:14px}
-.sa-dangerButton{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:28px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-error);font:inherit;font-size:12px;line-height:18px;cursor:pointer;white-space:nowrap}
+.sa-dangerButton{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:28px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-state-error-primary);font:inherit;font-size:12px;line-height:18px;cursor:pointer;white-space:nowrap}
 .sa-dangerButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-danger)}
 .sa-dangerButton:disabled{cursor:not-allowed;opacity:.4}
 .sa-pillIcon{display:inline-flex}
@@ -361,7 +361,7 @@ window.__ModuleLoader__.load({
 .sa-statusError{margin:0;color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}
 .sa-statusList{margin:0;padding-left:16px;color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}
 .sa-statusList li+li{margin-top:2px}
-.sa-note{margin:0;color:var(--dsw-alias-label-error);font-size:12px;line-height:18px}
+.sa-note{margin:0;color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:18px}
 .sa-groups{display:flex;flex-direction:column;gap:16px}
 .sa-group{display:flex;flex-direction:column;gap:8px;min-width:0}
 .sa-groupHead{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -381,7 +381,7 @@ window.__ModuleLoader__.load({
 .sa-iconButton{box-sizing:border-box;display:inline-flex;flex:none;align-items:center;justify-content:center;width:28px;height:28px;padding:6px;border:none;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);line-height:1;cursor:pointer}
 .sa-iconButton svg{width:15px;height:15px}
 .sa-iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
-.sa-iconButtonDanger:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-danger);color:var(--dsw-alias-label-error)}
+.sa-iconButtonDanger:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-danger);color:var(--dsw-alias-state-error-primary)}
 .sa-iconButton:disabled{cursor:not-allowed;opacity:.4}
 .sa-outlineButton{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 10px;border:.5px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px;cursor:pointer;white-space:nowrap}
 .sa-outlineButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
@@ -546,12 +546,15 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Archive glyph for the host's `settings.section.icon` slot (dsh 0.2.2+).
+     * Archive glyph for the host's `settings.section.icon` slot
+     * (DeepSeek Harness 0.2.2+; verified on 0.2.2-rc.2).
      *
      * The registration id must equal the section id; the shell owns the nav
-     * button, label, and icon wrapper and hands this component the requested
-     * pixel size. Inline layout keeps the glyph independent of the section
-     * stylesheet, which is mounted only while the settings page is open.
+     * button, label, and icon wrapper and hands this component `{ size, active }`.
+     * Only the requested edge is used: the row's color arrives through
+     * `currentColor`, so selection state needs no branch here. Inline layout keeps
+     * the glyph independent of the section stylesheet, which is mounted only while
+     * the settings page is open.
      */
     function SectionNavIcon(props) {
       const requested = props === null || props === undefined ? undefined : props.size
@@ -2078,10 +2081,10 @@ window.__ModuleLoader__.load({
         ),
       )
 
-      // dsh 0.2.2 exposes an official Settings navigation icon slot; the
-      // registration id must match the section id above. Older hosts never
-      // declare the slot, so the callback stays dormant and the shell keeps
-      // its default glyph.
+      // DeepSeek Harness 0.2.2 (verified on 0.2.2-rc.2) exposes an official
+      // Settings navigation icon slot; the registration id must match the
+      // section id above. Older hosts never declare the slot, so the callback
+      // stays dormant and the shell keeps its default glyph.
       ctx.slots.inject('settings.section.icon', () =>
         ctx.slots.register({ name: 'settings.section.icon', id: SECTION_ID }, SectionNavIcon),
       )

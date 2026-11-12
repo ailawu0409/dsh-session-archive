@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-11-12
+
+### Fixed
+
+- Danger menu rows, danger buttons, and error notices now use the `--dsw-alias-state-error-primary` design token. The previous `--dsw-alias-label-error` name is not defined by DeepSeek Harness, so that text silently fell back to the body text color instead of red.
+
+### Changed
+
+- Verified compatibility with DeepSeek Harness 0.2.2-rc.2. Every contract this plugin uses (Settings slots and owner props, Remote/Typert registration, Workspace registry, Session list fields, Session persistence, client module loading) is unchanged between 0.2.2-rc.1 and 0.2.2-rc.2; the Settings navigation icon keeps working through the official `settings.section.icon` slot.
+
 ## [0.1.1] - 2026-11-05
 
 ### Added
@@ -31,5 +41,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Automatic archiving is disabled by default.
 - Permanent deletion refuses unsafe IDs and live or pinned sessions.
 
+[0.1.2]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.2
 [0.1.1]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.1
 [0.1.0]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.0

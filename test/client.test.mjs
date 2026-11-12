@@ -166,6 +166,28 @@ assert.ok(icon.children[0].props.d.includes('M1.75 2.75'))
 assert.equal(iconRegistration.component({}).props.width, 16, 'a missing host size falls back to 16')
 assert.equal(iconRegistration.component({ size: 0 }).props.width, 16, 'an invalid host size falls back to 16')
 
+// DeepSeek Harness 0.2.2-rc.2 renders settings.section.icon inline for the nav
+// row and hands it { size: 16, active }; the shell owns the chrome, so the
+// registration carries nothing but its slot name and the target section id.
+assert.deepEqual(
+  Object.keys(iconRegistration.options).sort(),
+  ['id', 'name'],
+  'the rc.2 inline icon registration carries no order or label of its own',
+)
+assert.equal(
+  iconRegistration.component({ size: 16, active: false }).props.height,
+  16,
+  'the rc.2 owner props render the requested edge',
+)
+// The section registration keeps exactly the nav identity the rc.2 shell
+// projects: the id drives section filtering, order places the row, and the
+// label resolves through the registration's locale namespace.
+assert.deepEqual(
+  Object.keys(registration.options).sort(),
+  ['id', 'inject', 'label', 'locale', 'name', 'order'],
+  'the rc.2 section registration keeps the projected nav identity',
+)
+
 const injection = registration.options.inject()
 assert.equal(typeof injection.actions.setAutoArchive, 'function')
 assert.equal(typeof injection.actions.setRetentionDays, 'function')

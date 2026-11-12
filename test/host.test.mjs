@@ -27,6 +27,13 @@ function boot(options, stateDir) {
     },
     async archiveSession(id) {
       calls.archive.push(id)
+      if (Array.isArray(options.failArchive) && options.failArchive.includes(id)) {
+        // DeepSeek Harness 0.2.2-rc.2 reports refused archive admission for
+        // work that is still running as this structured Remote error.
+        const error = new Error('workspace/session-active: the session is running work')
+        error.code = 'workspace/session-active'
+        throw error
+      }
       archived.add(id)
     },
     async unarchiveSession(id) {
@@ -197,6 +204,10 @@ async function testScanDryRunFilters() {
             { sessionId: 'session-live', updatedAt: now - 40 * day, running: false, blank: false },
             { sessionId: 'session-blank', updatedAt: now - 40 * day, running: false, blank: true },
             { sessionId: 'session-subagent', updatedAt: now - 40 * day, running: false, blank: false, origin: 'subagent' },
+            // rc.2 keeps these Session Summary fields; each one excludes the row.
+            { sessionId: 'session-cold', updatedAt: now - 40 * day, running: false, blank: false, agentAvailable: false },
+            { sessionId: 'session-migrate', updatedAt: now - 40 * day, running: false, blank: false, formatStatus: 'migration-required' },
+            { sessionId: 'session-child', updatedAt: now - 40 * day, running: false, blank: false, parentSessionId: 'session-parent' },
           ],
         }
       },
@@ -235,8 +246,10 @@ async function testPermanentDelete() {
         detach.push(id)
       },
     }
+    const openCalls = []
     const persistence = {
-      async open(id) {
+      async open(id, access) {
+        openCalls.push({ id, access })
         return { header: { id }, async close() {} }
       },
     }
@@ -250,6 +263,9 @@ async function testPermanentDelete() {
     )
     const result = await service.command({ action: 'delete', sessionIds: ['session-test'] })
     assert.deepEqual(result.deleted, ['session-test'])
+    // rc.2 keeps the same SessionPersistence.open(id, access) contract: identity
+    // verification must never take write ownership.
+    assert.deepEqual(openCalls, [{ id: 'session-test', access: 'read' }])
     assert.deepEqual(result.skipped, [])
     assert.deepEqual(result.failed, [])
     assert.deepEqual(detach, ['session-test'])
@@ -522,10 +538,47 @@ async function testAuditRotation() {
   })
 }
 
+/**
+ * DeepSeek Harness 0.2.2-rc.2 archive admission can refuse a candidate the scan
+ * read as idle (running work behind the Session). The scan must record that id
+ * as an archive failure and keep archiving the rest of the batch.
+ */
+async function testScanContinuesPastArchiveRefusal() {
+  await withStateDir(async (dir) => {
+    const now = Date.now()
+    const day = 86_400_000
+    await mkdir(join(dir, 'plugin-state'), { recursive: true })
+    await writeFile(
+      join(dir, 'plugin-state', 'session-archive.json'),
+      JSON.stringify({ version: 1, autoArchiveEnabled: true, retentionDays: 30, scanIntervalMinutes: 60 }),
+    )
+    const sessionController = {
+      async list() {
+        return {
+          items: [
+            { sessionId: 'session-ok', updatedAt: now - 40 * day, running: false, blank: false },
+            { sessionId: 'session-busy', updatedAt: now - 40 * day, running: false, blank: false },
+          ],
+        }
+      },
+    }
+    const { service, calls, cleanups } = boot({ sessionController, failArchive: ['session-busy'] }, dir)
+    const result = await service.command({ action: 'scan' })
+    assert.deepEqual(result.candidates, ['session-ok', 'session-busy'])
+    assert.equal(result.archived, 1)
+    assert.equal(result.failed.length, 1)
+    assert.equal(result.failed[0].sessionId, 'session-busy')
+    assert.equal(result.failed[0].code, 'archive-failed')
+    assert.deepEqual(calls.archive, ['session-ok', 'session-busy'], 'one refusal does not stop the batch')
+    for (const cleanup of cleanups) await cleanup()
+  })
+}
+
 const tests = [
   testDefaultsAndPersistence,
   testRejectsUnknownSettings,
   testScanDryRunFilters,
+  testScanContinuesPastArchiveRefusal,
   testPermanentDelete,
   testDeleteRefusesLiveAndUnsafe,
   testDeleteWithoutRootIsUnavailable,
