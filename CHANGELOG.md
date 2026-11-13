@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-11-14
+
+### Fixed
+
+- After a confirmed permanent deletion, archived rows now disappear from the list immediately and are reconciled against the Host's authoritative archive set, so reopening Settings does not restore them and the archived list and the DSH sidebar agree again.
+- Business refusals (`{ error: { code, message } }`) and Host answers without a readable deletion batch are now reported with the Host's reason or an explicit error notice. Previously they collapsed into the neutral "no changes" result and silently removed nothing.
+- **Delete all** and group deletes now split their ids into consecutive smaller requests (well inside the Host's 500-id per-request cap) and aggregate the results. A view with more than 500 archived sessions used to be refused with `bad-request: at most 500 sessions per request`, which read as nothing happening.
+
 ## [0.1.3] - 2026-11-13
 
 ### Changed
@@ -48,6 +56,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Automatic archiving is disabled by default.
 - Permanent deletion refuses unsafe IDs and live or pinned sessions.
 
+[0.1.4]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.4
 [0.1.3]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.3
 [0.1.2]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.2
 [0.1.1]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.1

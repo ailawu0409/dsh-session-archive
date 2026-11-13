@@ -24,7 +24,7 @@ The package is dependency-free ESM. Runtime code uses only Node.js builtins on t
 - Injects `typert` and `workspaceRegistry`; everything else is resolved lazily through `ctx.get(...)`.
 - Publishes the owner-only service `sessionArchive` with a hand-written `typertRemote` binding and registers the Typert invocation `dsh-session-archive#sessionArchive/command`.
 - Do not import DSH packages here. A linked profile bundle cannot reliably resolve them; Node builtins are the only imports.
-- Remote actions: `getSettings`, `setSettings`, `scan`, `delete`, `unarchive`, `sessionMeta`. Keep request shapes, result shapes, and error codes synchronized with `client.js` and both test files.
+- Remote actions: `getSettings`, `setSettings`, `scan`, `delete`, `unarchive`, `sessionMeta`, `state`. Keep request shapes, result shapes, and error codes synchronized with `client.js` and both test files.
 - Settings defaults: `autoArchiveEnabled: false`, `retentionDays: 30`, `scanIntervalMinutes: 60`, `sessionLogRoot: null`. Validation accepts retention 1–3650 days, scan interval 1–1440 minutes, and rejects unknown keys.
 - State lives in `<profile>/plugin-state/`: `session-archive.json` (settings) and `session-archive-audit.log` (deletion audit). Resolve the profile from `DSH_PROFILE_DIR`, then the `ctx.baseUrl` directory, then `process.cwd()`; never write state into this plugin's own package directory.
 - Auto-archiving runs only when enabled. It scans shortly after startup (at most 60 seconds) and then on the configured interval. Candidates must be safely named, older than the retention cutoff, and not running, blank, subagent, unavailable, migration-required, archived, pinned, or live. Each scan handles at most 50 candidates.
@@ -43,7 +43,10 @@ The package is dependency-free ESM. Runtime code uses only Node.js builtins on t
 - The UI exposes only the auto-archive toggle and retention choices (3/7/14/30 days plus any stored custom value). `scanIntervalMinutes` and `sessionLogRoot` are advanced Host settings and are not currently exposed in Settings.
 - Session scope is a select with archived and unarchived views. The UI supports literal search over title/id/project name, project filtering, sorting by update or creation time, collapsible project groups, and per-session/per-group actions. Page-level **Archive all** (unarchived view) and **Delete all** (archived view) act on the whole view, not on the filtered result.
 - Archive and restore prefer the client `uiWorkspace`/`workspaces` services. Unarchive falls back to the Remote batch action when neither client service exists.
-- Permanent deletion asks the Host first. Only ids the Host reports as deleted or already absent are removed from the client list; a refusal must not hide rows or trigger a full list refresh.
+- Permanent deletion asks the Host first. Only ids the Host reports as deleted or already absent — or that its authoritative archive set no longer lists — are removed from the client list; a refusal must not hide rows or trigger a full list refresh.
+- The archived list keeps a page-local layer of ids the Host confirmed as removed. After a Host-side delete the DSH Workspace snapshot (`archivedSessionIds`) is not the authority for that list, so a confirmed row must not reappear when Settings is closed and reopened.
+- The page reconciles against the Host's read-only `state` action (the Host's `archivedSessionIds`/`pinnedSessionIds`) on mount and after every delete batch. A business-level `{ error: { code, message } }` value or an answer without a readable deletion batch must surface as an error rather than the neutral no-change notice.
+- The Client splits page-level and group deletes into consecutive requests of at most `DELETE_CHUNK_SIZE` (100) ids — well inside the Host's `MAX_DELETE_BATCH` (500) and the Remote watchdog — and aggregates the confirmed/skipped/failed results.
 - Keep all user-facing copy in the `zh` and `en` dictionaries inside `client.js`, and keep both languages in sync. Use `locale/*.json` only for package metadata.
 
 ## Required checks

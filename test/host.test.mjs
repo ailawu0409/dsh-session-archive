@@ -667,6 +667,21 @@ async function testScanContinuesPastArchiveRefusal() {
   })
 }
 
+async function testArchiveState() {
+  await withStateDir(async (dir) => {
+    const { service, calls, cleanups } = boot({ archived: ['session-a', 'plain-id'], pinned: ['session-c'] }, dir)
+    const result = await service.command({ action: 'state' })
+    assert.deepEqual(result, {
+      archivedSessionIds: ['session-a', 'plain-id'],
+      pinnedSessionIds: ['session-c'],
+    })
+    assert.deepEqual(calls.unarchive, [], 'the state read mutates no archive relation')
+    assert.deepEqual(calls.archive, [], 'the state read archives nothing')
+    assert.equal(await exists(join(dir, 'plugin-state', 'session-archive-audit.log')), false)
+    for (const cleanup of cleanups) await cleanup()
+  })
+}
+
 const tests = [
   testDefaultsAndPersistence,
   testRejectsUnknownSettings,
@@ -679,6 +694,7 @@ const tests = [
   testDeleteSkipsAbsent,
   testUnarchiveCounts,
   testSessionMeta,
+  testArchiveState,
   testDeleteHeaderMismatchLeavesState,
   testDeleteResolvesLoaderExpression,
   testDeleteFindsRootAmongCandidates,

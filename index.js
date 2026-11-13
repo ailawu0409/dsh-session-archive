@@ -692,6 +692,19 @@ export function apply(ctx) {
     }
   }
 
+  /**
+   * Read-only projection of the durable archive and pin sets. The Client renders
+   * the archived list from DSH's Workspace snapshot, which need not follow a
+   * change this plugin made Host-side; this answer is what it reconciles against.
+   * @returns the registry-global Session id sets.
+   */
+  function archiveState() {
+    return {
+      archivedSessionIds: (registry.archivedSessionIds ?? []).map(String),
+      pinnedSessionIds: (registry.pinnedSessionIds ?? []).map(String),
+    }
+  }
+
   /** Dispatch one validated Remote request. */
   async function command(request) {
     await ready
@@ -699,6 +712,8 @@ export function apply(ctx) {
     switch (request.action) {
       case 'getSettings':
         return { settings: snapshotSettings() }
+      case 'state':
+        return archiveState()
       case 'setSettings':
         return setSettings(request.settings)
       case 'scan':

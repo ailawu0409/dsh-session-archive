@@ -397,6 +397,7 @@ const {
   currentMainSessionId,
   deleteBlockReason,
   runDeleteFlow,
+  filterRemovedIds,
   summarizeOutcome,
   failureReasonText,
   actionErrorCode,
@@ -406,9 +407,11 @@ const {
   groupRows,
   RETENTION_CHOICES,
   SORT_OPTIONS,
+  DELETE_CHUNK_SIZE,
 } = plugin.__test
 assert.deepEqual(RETENTION_CHOICES, [3, 7, 14, 30])
 assert.deepEqual(SORT_OPTIONS, ['updatedAt', 'createdAt'])
+assert.ok(DELETE_CHUNK_SIZE > 0 && DELETE_CHUNK_SIZE <= 500, 'the Client chunk stays inside the Host batch cap')
 
 const workspaceSnapshot = {
   archivedSessionIds: ['s1', 's2', 's3'],
@@ -527,8 +530,62 @@ const deleted = await runDeleteFlow(okActions, ['a', 'b'], (key) => key)
 assert.equal(deleted.ok, true)
 assert.equal(deleted.value.success, 1)
 assert.equal(deleted.value.skipped, 1)
+assert.deepEqual(deleted.value.removed, ['a', 'b'], 'the confirmed ids are the ones the page may drop')
 assert.deepEqual(listCalls, [['a', 'b']], 'only the confirmed ids leave the client list')
 assert.deepEqual(refreshCalls, [], 'a clean delete refreshes nothing')
+
+// A page-level delete can exceed the Host's 500-id batch limit; the Client splits
+// it into consecutive requests instead of letting the Host refuse the whole batch.
+listCalls.length = 0
+const chunkCalls = []
+const chunkedIds = Array.from({ length: 1201 }, (_, index) => `session-${index}`)
+const chunked = await runDeleteFlow(
+  {
+    ...baseActions,
+    async deleteSessions(batch) {
+      chunkCalls.push([...batch])
+      return { ok: true, value: { deleted: [...batch], skipped: [], failed: [] } }
+    },
+  },
+  chunkedIds,
+  (key) => key,
+)
+assert.equal(chunked.ok, true)
+assert.equal(chunked.value.success, 1201)
+assert.equal(chunkCalls.length, Math.ceil(1201 / DELETE_CHUNK_SIZE), 'the flow issues one request per chunk')
+assert.ok(
+  chunkCalls.every((batch) => batch.length <= DELETE_CHUNK_SIZE),
+  'each Host request stays within the Client chunk size',
+)
+assert.equal(chunkCalls[0].length, DELETE_CHUNK_SIZE)
+assert.equal(chunkCalls.at(-1).length, 1201 - DELETE_CHUNK_SIZE * (chunkCalls.length - 1))
+assert.equal(chunked.value.removed.length, 1201)
+assert.equal(listCalls.length, 1, 'the confirmed ids leave the client list once')
+assert.equal(listCalls[0].length, 1201)
+
+// A rejection in a later batch aborts the flow and reports it; the Client must not
+// pretend the earlier batches were fully confirmed.
+listCalls.length = 0
+let chunkIndex = 0
+const abortedIds = Array.from({ length: 600 }, (_, index) => `aborted-${index}`)
+const aborted = await runDeleteFlow(
+  {
+    ...baseActions,
+    async deleteSessions() {
+      chunkIndex += 1
+      if (chunkIndex === 2) {
+        return { ok: true, value: { error: { code: 'bad-request', message: 'at most 500 sessions per request' } } }
+      }
+      return { ok: true, value: { deleted: ['s1'], skipped: [], failed: [] } }
+    },
+  },
+  abortedIds,
+  (key, params) => (params === undefined ? key : key + JSON.stringify(params)),
+)
+assert.equal(chunkIndex, 2, 'the second batch is attempted after the first')
+assert.equal(aborted.ok, false)
+assert.equal(aborted.code, 'bad-request')
+assert.deepEqual(listCalls, [], 'an aborted batch confirms nothing on its own')
 
 listCalls.length = 0
 const brokenActions = {
@@ -542,6 +599,166 @@ assert.equal(broken.ok, false)
 assert.equal(broken.message, 'boom')
 assert.deepEqual(listCalls, [], 'a transport failure changes nothing')
 assert.deepEqual(refreshCalls, [], 'a transport failure does not restore the list')
+
+// The Host reports a business refusal as a successful value carrying `{ error }`.
+// It must surface as a refusal, never as the neutral "no changes" notice.
+listCalls.length = 0
+const hostRefusal = await runDeleteFlow(
+  {
+    ...baseActions,
+    async deleteSessions() {
+      return { ok: true, value: { error: { code: 'bad-request', message: 'sessionIds must be a non-empty array' } } }
+    },
+  },
+  ['x'],
+  (key, params) => (params === undefined ? key : key + JSON.stringify(params)),
+)
+assert.equal(hostRefusal.ok, false, 'a business refusal is not a silent empty batch')
+assert.equal(hostRefusal.code, 'bad-request')
+assert.equal(
+  hostRefusal.message,
+  'status.hostRejected{"code":"bad-request","message":"sessionIds must be a non-empty array"}',
+)
+assert.deepEqual(listCalls, [], 'a business refusal removes nothing')
+
+// A successful answer that carries no readable batch is an error, not a no-op.
+const unreadable = await runDeleteFlow(
+  {
+    ...baseActions,
+    async deleteSessions() {
+      return { ok: true, value: {} }
+    },
+  },
+  ['x'],
+  (key) => key,
+)
+assert.equal(unreadable.ok, false)
+assert.equal(unreadable.message, 'status.unknownResult')
+assert.deepEqual(listCalls, [], 'an unreadable answer removes nothing')
+
+// ---- the page-local removal layer and the Host archive-set reconciliation ----
+const archivedRows = buildRows(workspaceSnapshot, sessionSnapshot, {})
+assert.deepEqual(
+  filterRemovedIds(archivedRows, new Set()),
+  archivedRows,
+  'an empty removal layer leaves every row',
+)
+assert.deepEqual(
+  filterRemovedIds(archivedRows, new Set(['s2'])).map((row) => row.id),
+  ['s1', 's3'],
+  'a confirmed removal drops exactly its row',
+)
+assert.deepEqual(filterRemovedIds(archivedRows, undefined), archivedRows, 'a missing layer is a no-op')
+assert.deepEqual(filterRemovedIds(undefined, new Set(['s1'])), [], 'a missing row list yields no rows')
+
+// One fake Client context per reconciliation case; apply() wires actions exactly
+// as the settings page receives them.
+function reconcileHarness(options = {}) {
+  const registrations = []
+  const commands = []
+  const unarchived = []
+  const harnessCtx = {
+    ...ctx,
+    locale: fallbackLocale,
+    get(name) {
+      if (name === 'remote.sessionArchive') {
+        return {
+          async command(request) {
+            commands.push(request)
+            if (request.action === 'state') return options.state ?? { ok: true, value: { archivedSessionIds: [] } }
+            return { ok: true, value: { settings: {} } }
+          },
+        }
+      }
+      if (name === 'workspaces') {
+        if (options.noWorkspaces === true) return undefined
+        return {
+          async unarchiveSession(id) {
+            if (options.unarchiveThrows === true) throw new Error('host refused')
+            unarchived.push(id)
+          },
+        }
+      }
+      return undefined
+    },
+    slots: {
+      inject(key, callback) {
+        callback()
+        return () => {}
+      },
+      register(entry, component) {
+        registrations.push({ options: entry, component })
+        return () => {}
+      },
+    },
+  }
+  plugin.apply(harnessCtx)
+  return { actions: registrations[0].options.inject().actions, commands, unarchived }
+}
+
+const keptAndGone = reconcileHarness({ state: { ok: true, value: { archivedSessionIds: ['s1'], pinnedSessionIds: [] } } })
+const archiveStateOutcome = await keptAndGone.actions.archiveState()
+assert.deepEqual(archiveStateOutcome, { ok: true, value: { archivedSessionIds: ['s1'], pinnedSessionIds: [] } })
+const reconciledOutcome = await keptAndGone.actions.reconcileArchive(['s1', 's2', 's2', ''])
+assert.equal(reconciledOutcome.ok, true)
+assert.deepEqual(reconciledOutcome.value.removed, ['s2'], 'only ids the Host no longer archives are dropped')
+assert.deepEqual(keptAndGone.unarchived, ['s2'], 'one idempotent re-assertion republishes the Host archive set')
+assert.ok(keptAndGone.commands.some((request) => request.action === 'state'), 'the Host state read is the authority')
+
+const stateFailed = reconcileHarness({ state: { ok: false, error: { message: 'boom' } } })
+const stateFailedOutcome = await stateFailed.actions.reconcileArchive(['s1'], { trustConfirmed: true })
+assert.deepEqual(stateFailedOutcome.value.removed, ['s1'], 'a confirmed batch falls back when the state read fails')
+const stateFailedUntrusted = await stateFailed.actions.reconcileArchive(['s9'])
+assert.deepEqual(stateFailedUntrusted.value.removed, [], 'an unconfirmed id is never dropped from a stale read')
+
+const noWorkspace = reconcileHarness({
+  state: { ok: true, value: { archivedSessionIds: [] } },
+  noWorkspaces: true,
+})
+const noWorkspaceOutcome = await noWorkspace.actions.reconcileArchive(['s3'])
+assert.deepEqual(noWorkspaceOutcome.value.removed, ['s3'], 'reconciliation still reports removals without the service')
+
+const unarchiveThrows = reconcileHarness({
+  state: { ok: true, value: { archivedSessionIds: [] } },
+  unarchiveThrows: true,
+})
+const originalWarn = console.warn
+const reconciliationWarnings = []
+console.warn = (...args) => reconciliationWarnings.push(args)
+const unarchiveThrowsOutcome = await unarchiveThrows.actions.reconcileArchive(['s4'])
+console.warn = originalWarn
+assert.equal(unarchiveThrowsOutcome.ok, true, 'a failed archive-set re-assertion never fails the user operation')
+assert.deepEqual(unarchiveThrowsOutcome.value.removed, ['s4'])
+assert.equal(reconciliationWarnings.length, 1, 'the best-effort reconciliation failure is logged once')
+
+const emptyReconcile = await reconcileHarness().actions.reconcileArchive([])
+assert.deepEqual(emptyReconcile.value.removed, [])
+
+// Older hosts expose no incremental session removal: that is a no-op, not a
+// failure that used to trigger a full Session-list refresh after every delete.
+const plainRegistrations = []
+const plainCtx = {
+  ...ctx,
+  locale: fallbackLocale,
+  get(name) {
+    if (name === 'sessions') return {}
+    return undefined
+  },
+  slots: {
+    inject(key, callback) {
+      callback()
+      return () => {}
+    },
+    register(entry, component) {
+      plainRegistrations.push({ options: entry, component })
+      return () => {}
+    },
+  },
+}
+plugin.apply(plainCtx)
+const plainActions = plainRegistrations[0].options.inject().actions
+const noIncremental = await plainActions.removeSessionsFromList(['s1'])
+assert.equal(noIncremental.ok, true, 'a host without incremental removal is a no-op, not a failure')
 
 // Blocked rows: pinned first, then in use, then previously refused ids.
 assert.equal(deleteBlockReason({ id: 'a', pinned: true, retained: true }), 'pinned')

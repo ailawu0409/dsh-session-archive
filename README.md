@@ -102,7 +102,9 @@ Before removing anything, the Host:
 5. Verifies through DSH session persistence that the stored log header names the same session id.
 6. Removes the log directory, clears the archive flag, and detaches the session from its workspaces.
 
-Sessions whose log is already absent are reported as skipped rather than failed. A single Remote request accepts at most 500 session ids.
+Sessions whose log is already absent are reported as skipped rather than failed. A single Remote request accepts at most 500 session ids; **Delete all** and a group delete split their work into smaller consecutive requests automatically and report the combined result.
+
+After a successful deletion, the confirmed sessions disappear from the archived list immediately and stay gone when Settings is closed and reopened; the page reconciles with the Host's authoritative archive set, so the archived list and the DSH sidebar agree. Refused sessions stay in the list and show the Host's reason (pinned, in use, unreadable log, identity mismatch, and so on) instead of a neutral "No changes." notice. A refusal or an answer that carries no readable deletion batch is reported as an error, and no row is removed for it.
 
 ## Local data and privacy
 
