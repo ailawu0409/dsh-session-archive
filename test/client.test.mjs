@@ -166,26 +166,27 @@ assert.ok(icon.children[0].props.d.includes('M1.75 2.75'))
 assert.equal(iconRegistration.component({}).props.width, 16, 'a missing host size falls back to 16')
 assert.equal(iconRegistration.component({ size: 0 }).props.width, 16, 'an invalid host size falls back to 16')
 
-// DeepSeek Harness 0.2.2-rc.2 renders settings.section.icon inline for the nav
-// row and hands it { size: 16, active }; the shell owns the chrome, so the
+// DeepSeek Harness 0.2.2-rc.2/rc.3 render settings.section.icon inline for the
+// nav row and hand it { size: 16, active }; the shell owns the chrome, so the
 // registration carries nothing but its slot name and the target section id.
+// (Settings slot contracts are byte-identical between rc.2 and rc.3.)
 assert.deepEqual(
   Object.keys(iconRegistration.options).sort(),
   ['id', 'name'],
-  'the rc.2 inline icon registration carries no order or label of its own',
+  'the inline icon registration carries no order or label of its own',
 )
 assert.equal(
   iconRegistration.component({ size: 16, active: false }).props.height,
   16,
-  'the rc.2 owner props render the requested edge',
+  'the icon owner props render the requested edge',
 )
-// The section registration keeps exactly the nav identity the rc.2 shell
+// The section registration keeps exactly the nav identity the rc.3 shell
 // projects: the id drives section filtering, order places the row, and the
 // label resolves through the registration's locale namespace.
 assert.deepEqual(
   Object.keys(registration.options).sort(),
   ['id', 'inject', 'label', 'locale', 'name', 'order'],
-  'the rc.2 section registration keeps the projected nav identity',
+  'the section registration keeps the projected nav identity',
 )
 
 const injection = registration.options.inject()
@@ -232,6 +233,50 @@ assert.deepEqual(
 )
 
 const clientSource = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+// Every --dsw-* token the plugin styles with must be one the host theme actually
+// defines; an unknown name silently falls back to body text instead of failing.
+// This guard is what caught the undefined --dsw-alias-label-error in 0.1.2.
+// The list below is the dsh-client-ui-theme 0.2.2-rc.3 token set this plugin uses.
+const CLIENT_TOKENS = [
+  '--dsw-alias-bg-layer-1',
+  '--dsw-alias-bg-layer-2',
+  '--dsw-alias-bg-mask-1',
+  '--dsw-alias-border-l1',
+  '--dsw-alias-border-l2',
+  '--dsw-alias-border-l3',
+  '--dsw-alias-border-l4',
+  '--dsw-alias-brand-primary',
+  '--dsw-alias-interactive-bg-active',
+  '--dsw-alias-interactive-bg-hover',
+  '--dsw-alias-interactive-bg-hover-danger',
+  '--dsw-alias-label-dimmed',
+  '--dsw-alias-label-primary',
+  '--dsw-alias-label-primary-foreground',
+  '--dsw-alias-label-secondary',
+  '--dsw-alias-label-tertiary',
+  '--dsw-alias-menu-icon',
+  '--dsw-alias-settings-card-fill',
+  '--dsw-alias-settings-card-stroke',
+  '--dsw-alias-state-business-primary',
+  '--dsw-alias-state-error-primary',
+  '--dsw-alias-state-success-primary',
+  '--dsw-alias-switch-thumb',
+  '--dsw-elevation-panel',
+  '--dsw-elevation-prominent',
+  '--dsw-elevation-soft',
+  '--dsw-focus-ring-color',
+  '--dsw-focus-ring-width',
+  '--dsw-mask-blur',
+  '--dsw-menu-backdrop-filter',
+  '--dsw-menu-surface-fill',
+  '--dsw-radius-lg',
+  '--dsw-radius-md',
+  '--dsw-radius-panel',
+  '--dsw-radius-sm',
+  '--dsw-radius-xl',
+]
+const usedTokens = [...new Set(clientSource.match(/--dsw-[a-z0-9-]+/g) ?? [])].sort()
+assert.deepEqual(usedTokens, [...CLIENT_TOKENS].sort(), 'client.js styles only with host-defined --dsw-* tokens')
 const zhDictionary = localeRegistrations[0].dictionaries.zh
 for (const match of clientSource.matchAll(/\bt\('([^']+)'/g)) {
   assert.ok(match[1] in zhDictionary, `missing zh dictionary key: ${match[1]}`)

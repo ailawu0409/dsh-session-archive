@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-11-13
+
+### Changed
+
+- Verified compatibility with DeepSeek Harness 0.2.2-rc.3. Every contract this plugin uses (Settings section slots and owner props, Remote/Typert registration, Workspace registry, Session list fields, Session persistence and query, client module loading, and all `--dsw-*` design tokens) is unchanged between 0.2.2-rc.2 and 0.2.2-rc.3; no runtime code changed.
+- Documented that sessions created by DeepSeek Harness 0.2.2-rc.3's experimental DeepSeek chat import plugin are ordinary sessions: they follow normal retention, archive, restore, and permanent-delete rules.
+
 ## [0.1.2] - 2026-11-12
 
 ### Fixed
@@ -41,6 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Automatic archiving is disabled by default.
 - Permanent deletion refuses unsafe IDs and live or pinned sessions.
 
+[0.1.3]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.3
 [0.1.2]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.2
 [0.1.1]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.1
 [0.1.0]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.0

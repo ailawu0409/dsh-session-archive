@@ -547,7 +547,7 @@ window.__ModuleLoader__.load({
 
     /**
      * Archive glyph for the host's `settings.section.icon` slot
-     * (DeepSeek Harness 0.2.2+; verified on 0.2.2-rc.2).
+     * (DeepSeek Harness 0.2.2+; verified on 0.2.2-rc.3).
      *
      * The registration id must equal the section id; the shell owns the nav
      * button, label, and icon wrapper and hands this component `{ size, active }`.
@@ -2081,7 +2081,7 @@ window.__ModuleLoader__.load({
         ),
       )
 
-      // DeepSeek Harness 0.2.2 (verified on 0.2.2-rc.2) exposes an official
+      // DeepSeek Harness 0.2.2 (verified on 0.2.2-rc.3) exposes an official
       // Settings navigation icon slot; the registration id must match the
       // section id above. Older hosts never declare the slot, so the callback
       // stays dormant and the shell keeps its default glyph.

@@ -28,8 +28,8 @@ function boot(options, stateDir) {
     async archiveSession(id) {
       calls.archive.push(id)
       if (Array.isArray(options.failArchive) && options.failArchive.includes(id)) {
-        // DeepSeek Harness 0.2.2-rc.2 reports refused archive admission for
-        // work that is still running as this structured Remote error.
+        // DeepSeek Harness 0.2.2-rc.2/rc.3 report refused archive admission
+        // for work that is still running as this structured Remote error.
         const error = new Error('workspace/session-active: the session is running work')
         error.code = 'workspace/session-active'
         throw error
@@ -204,7 +204,8 @@ async function testScanDryRunFilters() {
             { sessionId: 'session-live', updatedAt: now - 40 * day, running: false, blank: false },
             { sessionId: 'session-blank', updatedAt: now - 40 * day, running: false, blank: true },
             { sessionId: 'session-subagent', updatedAt: now - 40 * day, running: false, blank: false, origin: 'subagent' },
-            // rc.2 keeps these Session Summary fields; each one excludes the row.
+            // DeepSeek Harness 0.2.2-rc.2/rc.3 keep these Session Summary
+            // fields; each one excludes the row.
             { sessionId: 'session-cold', updatedAt: now - 40 * day, running: false, blank: false, agentAvailable: false },
             { sessionId: 'session-migrate', updatedAt: now - 40 * day, running: false, blank: false, formatStatus: 'migration-required' },
             { sessionId: 'session-child', updatedAt: now - 40 * day, running: false, blank: false, parentSessionId: 'session-parent' },
@@ -263,8 +264,8 @@ async function testPermanentDelete() {
     )
     const result = await service.command({ action: 'delete', sessionIds: ['session-test'] })
     assert.deepEqual(result.deleted, ['session-test'])
-    // rc.2 keeps the same SessionPersistence.open(id, access) contract: identity
-    // verification must never take write ownership.
+    // DeepSeek Harness 0.2.2-rc.2/rc.3 keep the same SessionPersistence.open(id,
+    // access) contract: identity verification must never take write ownership.
     assert.deepEqual(openCalls, [{ id: 'session-test', access: 'read' }])
     assert.deepEqual(result.skipped, [])
     assert.deepEqual(result.failed, [])
@@ -539,9 +540,101 @@ async function testAuditRotation() {
 }
 
 /**
- * DeepSeek Harness 0.2.2-rc.2 archive admission can refuse a candidate the scan
- * read as idle (running work behind the Session). The scan must record that id
- * as an archive failure and keep archiving the rest of the batch.
+ * DeepSeek Harness 0.2.2-rc.3 adds an experimental DeepSeek chat import plugin
+ * that writes ordinary Sessions through SessionPersistence.create() with
+ * randomUUID ids and attaches them to a Workspace. The archive plugin must keep
+ * treating those Sessions as ordinary: readable metadata, normal retention
+ * admission, and the same guarded permanent-delete path.
+ */
+async function testRc3ImportedSessionsDelete() {
+  await withStateDir(async (dir) => {
+    const root = join(dir, 'sessions')
+    const ids = [
+      '3f2b6c1e-9a4d-4c7e-8f10-2b6d9e7a1c55',
+      '7a1d4e2b-5c3f-4b8a-9e6d-0f2c8b7a5d41',
+      'c9e7a3d1-2b4f-4e6a-8c5d-1a9f0e3b7c62',
+    ]
+    const now = Date.now()
+    for (const id of ids) {
+      const sessionDir = join(root, 'project-import', id)
+      await mkdir(sessionDir, { recursive: true })
+      await writeFile(join(sessionDir, 'session.v4.jsonl'), '{}\n')
+    }
+    await mkdir(join(dir, 'plugin-state'), { recursive: true })
+    await writeFile(
+      join(dir, 'plugin-state', 'session-archive.json'),
+      JSON.stringify({ version: 1, autoArchiveEnabled: true, sessionLogRoot: root }),
+    )
+
+    const openCalls = []
+    const persistence = {
+      async list() {
+        return ids.map((id) => ({ header: { id, createdAt: now - 40 * 86_400_000 } }))
+      },
+      async open(id, access) {
+        openCalls.push({ id, access })
+        return { header: { id, createdAt: now - 40 * 86_400_000 }, async close() {} }
+      },
+    }
+    const sessionController = {
+      async list() {
+        return {
+          items: [
+            { sessionId: ids[0], updatedAt: now, running: false, blank: false },
+            { sessionId: ids[1], updatedAt: now - 40 * 86_400_000, running: false, blank: false },
+            { sessionId: ids[2], updatedAt: now - 40 * 86_400_000, running: false, blank: false },
+          ],
+        }
+      },
+    }
+    const { service, calls, archived, cleanups } = boot({ sessionController, persistence }, dir)
+
+    // Imported headers are readable through the same SessionPersistence API the plugin already uses.
+    const meta = await service.command({ action: 'sessionMeta', ids })
+    assert.deepEqual(
+      meta.items.map((item) => item.sessionId).sort(),
+      [...ids].sort(),
+      'imported session headers expose their creation time',
+    )
+    assert.equal(meta.items.every((item) => item.createdAt === now - 40 * 86_400_000), true)
+
+    // The retention cutoff is the same for imported Sessions: an aged import is
+    // archived, a fresh import is left alone even though both are ordinary rows.
+    const scan = await service.command({ action: 'scan' })
+    assert.deepEqual(scan.candidates, [ids[1], ids[2]], 'imported sessions follow the normal retention cutoff')
+    assert.equal(scan.archived, 2)
+    assert.deepEqual(calls.archive, [ids[1], ids[2]])
+    const disabled = await service.command({ action: 'setSettings', settings: { autoArchiveEnabled: false } })
+    assert.equal(disabled.settings.autoArchiveEnabled, false)
+
+    // Archive the fresh import too, then permanently delete the whole imported batch.
+    for (const id of ids) archived.add(id)
+    const result = await service.command({ action: 'delete', sessionIds: ids })
+    assert.deepEqual(result.deleted, ids)
+    assert.deepEqual(result.skipped, [])
+    assert.deepEqual(result.failed, [])
+    for (const id of ids) {
+      assert.equal(await exists(join(root, 'project-import', id)), false, `the imported log for ${id} is gone`)
+    }
+    assert.deepEqual(calls.unarchive, ids)
+    assert.equal(
+      openCalls.every((call) => call.access === 'read'),
+      true,
+      'identity verification never takes write ownership',
+    )
+    const log = await readFile(join(dir, 'plugin-state', 'session-archive-audit.log'), 'utf8')
+    const records = log.trim().split('\n').map((line) => JSON.parse(line))
+    assert.equal(records.length, 3)
+    assert.deepEqual(records.map((record) => record.sessionId).sort(), [...ids].sort())
+    assert.equal(records.every((record) => record.result === 'deleted'), true)
+    for (const cleanup of cleanups) await cleanup()
+  })
+}
+
+/**
+ * DeepSeek Harness 0.2.2-rc.2/rc.3 archive admission can refuse a candidate the
+ * scan read as idle (running work behind the Session). The scan must record that
+ * id as an archive failure and keep archiving the rest of the batch.
  */
 async function testScanContinuesPastArchiveRefusal() {
   await withStateDir(async (dir) => {
@@ -580,6 +673,7 @@ const tests = [
   testScanDryRunFilters,
   testScanContinuesPastArchiveRefusal,
   testPermanentDelete,
+  testRc3ImportedSessionsDelete,
   testDeleteRefusesLiveAndUnsafe,
   testDeleteWithoutRootIsUnavailable,
   testDeleteSkipsAbsent,
