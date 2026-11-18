@@ -397,7 +397,9 @@ const {
   currentMainSessionId,
   deleteBlockReason,
   runDeleteFlow,
+  deleteAndReconcile,
   filterRemovedIds,
+  forgetRemovedIds,
   summarizeOutcome,
   failureReasonText,
   actionErrorCode,
@@ -585,7 +587,9 @@ const aborted = await runDeleteFlow(
 assert.equal(chunkIndex, 2, 'the second batch is attempted after the first')
 assert.equal(aborted.ok, false)
 assert.equal(aborted.code, 'bad-request')
-assert.deepEqual(listCalls, [], 'an aborted batch confirms nothing on its own')
+assert.equal(aborted.value.success, 1, 'the confirmed prefix survives a later chunk failure')
+assert.deepEqual(aborted.value.removed, ['s1'], 'the confirmed prefix is reported to the page')
+assert.deepEqual(listCalls, [['s1']], 'only the confirmed prefix leaves the client list')
 
 listCalls.length = 0
 const brokenActions = {
@@ -636,6 +640,99 @@ assert.equal(unreadable.ok, false)
 assert.equal(unreadable.message, 'status.unknownResult')
 assert.deepEqual(listCalls, [], 'an unreadable answer removes nothing')
 
+// An answered batch where every item failed still succeeds as a batch, but it
+// confirmed nothing: no row may be removed or reconciled.
+listCalls.length = 0
+const allFailed = await runDeleteFlow(
+  {
+    ...baseActions,
+    async deleteSessions() {
+      return { ok: true, value: { deleted: [], skipped: [], failed: [{ sessionId: 'live', code: 'session-live' }] } }
+    },
+  },
+  ['live'],
+  (key) => key,
+)
+assert.equal(allFailed.ok, true)
+assert.equal(allFailed.value.success, 0)
+assert.deepEqual(allFailed.value.removed, [])
+assert.deepEqual(listCalls, [], 'an all-failed batch leaves the client list untouched')
+
+// ---- delete + reconcile: only Host-confirmed ids may reach the archive read ----
+const reconcileCalls = []
+const confirmedActions = {
+  ...baseActions,
+  async deleteSessions() {
+    return { ok: true, value: { deleted: ['gone'], skipped: [], failed: [] } }
+  },
+  async reconcileArchive(ids) {
+    reconcileCalls.push([...ids])
+    return { ok: true, value: { removed: [...ids] } }
+  },
+}
+listCalls.length = 0
+const confirmedDelete = await deleteAndReconcile(confirmedActions, ['gone', 'refused'], (key) => key)
+assert.equal(confirmedDelete.outcome.ok, true)
+assert.deepEqual(reconcileCalls, [['gone']], 'only confirmed ids reach the archive-set read')
+assert.deepEqual(confirmedDelete.removed, ['gone'])
+assert.deepEqual(listCalls, [['gone']])
+
+reconcileCalls.length = 0
+listCalls.length = 0
+const refusedDelete = await deleteAndReconcile(
+  {
+    ...baseActions,
+    async deleteSessions() {
+      return { ok: true, value: { deleted: [], skipped: [], failed: [{ sessionId: 'live', code: 'session-live' }] } }
+    },
+    async reconcileArchive(ids) {
+      reconcileCalls.push([...ids])
+      return { ok: true, value: { removed: [...ids] } }
+    },
+  },
+  ['live'],
+  (key) => key,
+)
+assert.equal(refusedDelete.outcome.ok, true)
+assert.deepEqual(reconcileCalls, [], 'a failed delete never reconciles the requested ids')
+assert.deepEqual(refusedDelete.removed, [])
+assert.deepEqual(listCalls, [])
+
+const stateDownDelete = await deleteAndReconcile(
+  {
+    ...baseActions,
+    async deleteSessions() {
+      return { ok: true, value: { deleted: ['done'], skipped: [], failed: [] } }
+    },
+    async reconcileArchive() {
+      return { ok: false, error: { message: 'state unavailable' } }
+    },
+  },
+  ['done'],
+  (key) => key,
+)
+assert.deepEqual(stateDownDelete.removed, ['done'], 'confirmed ids still disappear when the state read fails')
+
+const originalWarn = console.warn
+const reconciliationWarnings = []
+console.warn = (...args) => reconciliationWarnings.push(args)
+const reconcileThrowsDelete = await deleteAndReconcile(
+  {
+    ...baseActions,
+    async deleteSessions() {
+      return { ok: true, value: { deleted: ['done'], skipped: [], failed: [] } }
+    },
+    async reconcileArchive() {
+      throw new Error('reconcile blew up')
+    },
+  },
+  ['done'],
+  (key) => key,
+)
+console.warn = originalWarn
+assert.deepEqual(reconcileThrowsDelete.removed, ['done'], 'a throwing reconciliation never resurrects confirmed rows')
+assert.equal(reconciliationWarnings.length, 1, 'the best-effort reconciliation failure is logged once')
+
 // ---- the page-local removal layer and the Host archive-set reconciliation ----
 const archivedRows = buildRows(workspaceSnapshot, sessionSnapshot, {})
 assert.deepEqual(
@@ -651,12 +748,27 @@ assert.deepEqual(
 assert.deepEqual(filterRemovedIds(archivedRows, undefined), archivedRows, 'a missing layer is a no-op')
 assert.deepEqual(filterRemovedIds(undefined, new Set(['s1'])), [], 'a missing row list yields no rows')
 
+// The unarchived tab uses the same layer: an older host without incremental
+// removal would otherwise keep a deleted row visible there.
+const unarchivedRows = buildUnarchivedRows(liveSnapshot, liveSessions, {})
+assert.deepEqual(
+  filterRemovedIds(unarchivedRows, new Set(['s7'])).map((row) => row.id),
+  ['s2', 's5'],
+  'the unarchived view drops a confirmed removal too',
+)
+
+const tombstones = new Set(['s2', 's3'])
+assert.equal(forgetRemovedIds(tombstones, []), tombstones, 'no ids keeps the same tombstone set')
+assert.deepEqual([...forgetRemovedIds(tombstones, ['s2'])], ['s3'], 'a successful archive clears its tombstone')
+assert.equal(forgetRemovedIds(tombstones, ['s9']), tombstones, 'an unknown id keeps the same tombstone set')
+assert.equal(forgetRemovedIds(undefined, ['s2']), undefined, 'a missing tombstone set is a no-op')
+
 // One fake Client context per reconciliation case; apply() wires actions exactly
 // as the settings page receives them.
 function reconcileHarness(options = {}) {
   const registrations = []
   const commands = []
-  const unarchived = []
+  const workspaceCalls = []
   const harnessCtx = {
     ...ctx,
     locale: fallbackLocale,
@@ -671,11 +783,12 @@ function reconcileHarness(options = {}) {
         }
       }
       if (name === 'workspaces') {
-        if (options.noWorkspaces === true) return undefined
         return {
           async unarchiveSession(id) {
-            if (options.unarchiveThrows === true) throw new Error('host refused')
-            unarchived.push(id)
+            workspaceCalls.push(id)
+          },
+          async archiveSession(id) {
+            workspaceCalls.push(id)
           },
         }
       }
@@ -693,43 +806,27 @@ function reconcileHarness(options = {}) {
     },
   }
   plugin.apply(harnessCtx)
-  return { actions: registrations[0].options.inject().actions, commands, unarchived }
+  return { actions: registrations[0].options.inject().actions, commands, workspaceCalls }
 }
 
 const keptAndGone = reconcileHarness({ state: { ok: true, value: { archivedSessionIds: ['s1'], pinnedSessionIds: [] } } })
-const archiveStateOutcome = await keptAndGone.actions.archiveState()
-assert.deepEqual(archiveStateOutcome, { ok: true, value: { archivedSessionIds: ['s1'], pinnedSessionIds: [] } })
 const reconciledOutcome = await keptAndGone.actions.reconcileArchive(['s1', 's2', 's2', ''])
 assert.equal(reconciledOutcome.ok, true)
 assert.deepEqual(reconciledOutcome.value.removed, ['s2'], 'only ids the Host no longer archives are dropped')
-assert.deepEqual(keptAndGone.unarchived, ['s2'], 'one idempotent re-assertion republishes the Host archive set')
+assert.deepEqual(keptAndGone.workspaceCalls, [], 'reconciliation reads the Host state without mutating workspaces')
 assert.ok(keptAndGone.commands.some((request) => request.action === 'state'), 'the Host state read is the authority')
 
 const stateFailed = reconcileHarness({ state: { ok: false, error: { message: 'boom' } } })
-const stateFailedOutcome = await stateFailed.actions.reconcileArchive(['s1'], { trustConfirmed: true })
-assert.deepEqual(stateFailedOutcome.value.removed, ['s1'], 'a confirmed batch falls back when the state read fails')
-const stateFailedUntrusted = await stateFailed.actions.reconcileArchive(['s9'])
-assert.deepEqual(stateFailedUntrusted.value.removed, [], 'an unconfirmed id is never dropped from a stale read')
+const stateFailedOutcome = await stateFailed.actions.reconcileArchive(['s1'])
+assert.equal(stateFailedOutcome.ok, false, 'a failed state read is reported to the caller')
+assert.equal(stateFailedOutcome.error.message, 'boom')
+assert.deepEqual(stateFailed.workspaceCalls, [])
 
-const noWorkspace = reconcileHarness({
-  state: { ok: true, value: { archivedSessionIds: [] } },
-  noWorkspaces: true,
+const unknownState = reconcileHarness({
+  state: { ok: true, value: { error: { code: 'bad-request', message: 'unknown action "state"' } } },
 })
-const noWorkspaceOutcome = await noWorkspace.actions.reconcileArchive(['s3'])
-assert.deepEqual(noWorkspaceOutcome.value.removed, ['s3'], 'reconciliation still reports removals without the service')
-
-const unarchiveThrows = reconcileHarness({
-  state: { ok: true, value: { archivedSessionIds: [] } },
-  unarchiveThrows: true,
-})
-const originalWarn = console.warn
-const reconciliationWarnings = []
-console.warn = (...args) => reconciliationWarnings.push(args)
-const unarchiveThrowsOutcome = await unarchiveThrows.actions.reconcileArchive(['s4'])
-console.warn = originalWarn
-assert.equal(unarchiveThrowsOutcome.ok, true, 'a failed archive-set re-assertion never fails the user operation')
-assert.deepEqual(unarchiveThrowsOutcome.value.removed, ['s4'])
-assert.equal(reconciliationWarnings.length, 1, 'the best-effort reconciliation failure is logged once')
+const unknownStateOutcome = await unknownState.actions.reconcileArchive(['s1'])
+assert.equal(unknownStateOutcome.ok, false, 'an old Host without the state action is not treated as an empty archive set')
 
 const emptyReconcile = await reconcileHarness().actions.reconcileArchive([])
 assert.deepEqual(emptyReconcile.value.removed, [])

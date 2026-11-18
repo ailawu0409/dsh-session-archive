@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-11-18
+
+### Fixed
+
+- A refused or unreadable permanent delete can no longer hide sessions that were never deleted. Only ids the Host reports as `deleted` or `skipped` enter the page-local removal layer; a failed delete from the unarchived view no longer marks its target as gone.
+- A delete that fails in a later request chunk still removes the sessions already confirmed by earlier chunks from the client list, instead of discarding the confirmed prefix with the error.
+- The mount-time archive reconciliation no longer cancels itself when the DSH Workspace snapshot changes while the Host state read is in flight, and a failed read stays retryable instead of consuming the page visit.
+- The unarchived list now honors confirmed removals too, so hosts without incremental session removal do not keep a deleted row visible there.
+- Archive-set reconciliation is read-only: it no longer calls `workspaces.unarchiveSession` and cannot undo a concurrent archive. A successful later archive clears the page-local removal tombstone for that id.
+
 ## [0.1.4] - 2026-11-14
 
 ### Fixed
@@ -56,6 +66,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Automatic archiving is disabled by default.
 - Permanent deletion refuses unsafe IDs and live or pinned sessions.
 
+[0.1.5]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.5
 [0.1.4]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.4
 [0.1.3]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.3
 [0.1.2]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.2

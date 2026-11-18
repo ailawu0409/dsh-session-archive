@@ -47,7 +47,7 @@ Restart DeepSeek Harness, then open **Settings → Archive management** (归档�
 To install a specific release, use its tag, for example:
 
 ```sh
-dsh plugin --profile desktop add github:ailawu0409/dsh-session-archive#v0.1.4
+dsh plugin --profile desktop add github:ailawu0409/dsh-session-archive#v0.1.5
 ```
 
 ### Upgrade
@@ -117,7 +117,7 @@ A session can exist without a log directory. When the log is already absent, the
 
 A single Remote request accepts at most 500 session ids. **Delete all** and group deletes split their work into consecutive requests of at most 100 ids and report the combined result.
 
-After a successful deletion, the confirmed sessions disappear from the archived list immediately and stay gone when Settings is closed and reopened; the page reconciles with the Host's authoritative archive set, so the archived list and the DSH sidebar agree. Refused sessions stay in the list and show the Host's reason (pinned, in use, unreadable log, identity mismatch, and so on) instead of a neutral “No changes.” notice. A refusal or an answer that carries no readable deletion batch is reported as an error, and no row is removed for it.
+After a successful deletion, the confirmed sessions disappear from both session lists immediately and stay gone when Settings is closed and reopened; the page reconciles with the Host's authoritative archive set, and DSH's Workspace Feed publishes archive-set changes to the sidebar. Refused sessions stay in the list and show the Host's reason (pinned, in use, unreadable log, identity mismatch, and so on) instead of a neutral “No changes.” notice. A refusal or an answer that carries no readable deletion batch is reported as an error, and no row is removed for it.
 
 Deleting a session removes its session log directory; it does not delete files in the session's working directory.
 

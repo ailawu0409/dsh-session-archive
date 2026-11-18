@@ -956,6 +956,10 @@ window.__ModuleLoader__.load({
      * delete is split into consecutive chunks. The previous order (hide first,
      * restore on refusal) made the sidebar flash once per rejected attempt, and
      * an unreadable answer used to read as "no changes".
+     *
+     * A failure in a later chunk still returns the confirmed prefix in `value`, so
+     * the caller can drop the Sessions this request permanently deleted even though
+     * the overall batch failed.
      * @param actions - injected Client actions.
      * @param ids - Session ids to delete.
      * @param t - localized text lookup.
@@ -970,16 +974,34 @@ window.__ModuleLoader__.load({
       const deleted = []
       const skipped = []
       const failed = []
+      /** Close the flow with everything confirmed so far, even after a failed chunk. */
+      const settle = async (failure) => {
+        const gone = [...deleted, ...skipped]
+          .map((value) => (typeof value === 'string' ? value : String(value?.sessionId ?? value?.id ?? '')))
+          .filter((id) => id.length > 0)
+        if (gone.length > 0 && typeof actions.removeSessionsFromList === 'function') {
+          const hidden = await actions.removeSessionsFromList(gone)
+          if (hidden?.ok !== true && typeof actions.restoreSessionList === 'function') {
+            await actions.restoreSessionList()
+          }
+        }
+        const value = { success: deleted.length, skipped: skipped.length, failed, removed: gone }
+        return failure === undefined ? { ok: true, value } : { ...failure, value }
+      }
       for (let offset = 0; offset < unique.length; offset += DELETE_CHUNK_SIZE) {
         const chunk = unique.slice(offset, offset + DELETE_CHUNK_SIZE)
         let outcome
         try {
           outcome = await actions.deleteSessions(chunk)
         } catch (error) {
-          return { ok: false, message: error instanceof Error ? error.message : t('error.generic') }
+          return settle({ ok: false, message: error instanceof Error ? error.message : t('error.generic') })
         }
         if (outcome === undefined || outcome === null || outcome.ok !== true) {
-          return { ok: false, message: outcome?.error?.message ?? t('error.generic') }
+          return settle({
+            ok: false,
+            code: outcome?.error?.code,
+            message: outcome?.error?.message ?? t('error.generic'),
+          })
         }
         // The Host reports a business refusal as a successful answer carrying
         // `{ error }`; reading it as an empty batch is what hid refusals behind the
@@ -989,27 +1011,47 @@ window.__ModuleLoader__.load({
           const code = typeof refusal.code === 'string' && refusal.code.length > 0 ? refusal.code : 'unknown'
           const message =
             typeof refusal.message === 'string' && refusal.message.length > 0 ? refusal.message : t('error.generic')
-          return { ok: false, message: t('status.hostRejected', { code, message }), code }
+          return settle({ ok: false, message: t('status.hostRejected', { code, message }), code })
         }
         const readable =
           Array.isArray(outcome.value?.deleted) ||
           Array.isArray(outcome.value?.skipped) ||
           Array.isArray(outcome.value?.failed)
-        if (!readable) return { ok: false, message: t('status.unknownResult') }
+        if (!readable) return settle({ ok: false, message: t('status.unknownResult') })
         deleted.push(...(Array.isArray(outcome.value?.deleted) ? outcome.value.deleted : []))
         skipped.push(...(Array.isArray(outcome.value?.skipped) ? outcome.value.skipped : []))
         failed.push(...(Array.isArray(outcome.value?.failed) ? outcome.value.failed : []))
       }
-      const gone = [...deleted, ...skipped]
-        .map((value) => (typeof value === 'string' ? value : String(value?.sessionId ?? value?.id ?? '')))
-        .filter((id) => id.length > 0)
-      if (gone.length > 0 && typeof actions.removeSessionsFromList === 'function') {
-        const hidden = await actions.removeSessionsFromList(gone)
-        if (hidden?.ok !== true && typeof actions.restoreSessionList === 'function') {
-          await actions.restoreSessionList()
+      return settle()
+    }
+
+    /**
+     * Delete Sessions, then reconcile only the ids the Host confirmed as deleted or
+     * already absent. The archived list is projected from DSH's Workspace snapshot,
+     * which can lag the Host's archive set, so the confirmed prefix is checked
+     * against the Host's read-only `state` answer. A refused or unreadable batch
+     * reconciles nothing: the Host's archive set is not proof that a requested id
+     * was deleted.
+     * @param actions - injected Client actions.
+     * @param ids - Session ids to delete.
+     * @param t - localized text lookup.
+     * @returns the delete outcome plus the ids this page may drop from its list.
+     */
+    async function deleteAndReconcile(actions, ids, t) {
+      const outcome = await runDeleteFlow(actions, ids, t)
+      const confirmed = Array.isArray(outcome.value?.removed) ? outcome.value.removed : []
+      let removed = confirmed
+      if (confirmed.length > 0 && typeof actions.reconcileArchive === 'function') {
+        try {
+          const reconciled = await actions.reconcileArchive(confirmed)
+          if (reconciled?.ok === true && Array.isArray(reconciled.value?.removed)) {
+            removed = reconciled.value.removed
+          }
+        } catch (error) {
+          console.warn('[session-archive] archive reconciliation failed', error)
         }
       }
-      return { ok: true, value: { success: deleted.length, skipped: skipped.length, failed, removed: gone } }
+      return { outcome, removed }
     }
 
     /** Order rows by the chosen dimension. */
@@ -1091,6 +1133,28 @@ window.__ModuleLoader__.load({
       if (removedIds === undefined || removedIds === null || typeof removedIds.has !== 'function') return rows
       if (removedIds.size === 0) return rows
       return rows.filter((row) => !removedIds.has(row.id))
+    }
+
+    /**
+     * Clear removal tombstones for Sessions the user archived again. A tombstone
+     * normally outlives the page visit, so without this an id that was refused,
+     * reconciled away, and later archived successfully would stay hidden.
+     * @param removedIds - the current tombstone set.
+     * @param ids - Session ids that are no longer marked removed.
+     * @returns the same set when nothing changed, otherwise a reduced copy.
+     */
+    function forgetRemovedIds(removedIds, ids) {
+      if (removedIds === undefined || removedIds === null || typeof removedIds.delete !== 'function') {
+        return removedIds
+      }
+      const values = (Array.isArray(ids) ? ids : []).map((value) => String(value)).filter((id) => id.length > 0)
+      if (values.length === 0) return removedIds
+      let changed = false
+      const next = new Set(removedIds)
+      for (const id of values) {
+        if (next.delete(id)) changed = true
+      }
+      return changed ? next : removedIds
     }
 
     /** Centered confirmation dialog for one, one group, or all archived sessions. */
@@ -1224,8 +1288,8 @@ window.__ModuleLoader__.load({
         [workspaceSnapshot, sessionSnapshot, createdAtById, removedIds],
       )
       const unarchivedRows = React.useMemo(
-        () => buildUnarchivedRows(workspaceSnapshot, sessionSnapshot, createdAtById),
-        [workspaceSnapshot, sessionSnapshot, createdAtById],
+        () => filterRemovedIds(buildUnarchivedRows(workspaceSnapshot, sessionSnapshot, createdAtById), removedIds),
+        [workspaceSnapshot, sessionSnapshot, createdAtById, removedIds],
       )
       const rows = tab === 'archived' ? archivedRows : unarchivedRows
       const metaIds = React.useMemo(
@@ -1243,29 +1307,64 @@ window.__ModuleLoader__.load({
       const remoteReady = settings.remoteReady === true
       const settingsReady = settings.status === 'ready'
 
+      // Rows the Host confirmed as gone stay out of this page's archived list.
+      const rememberRemoved = (items) => {
+        if (!Array.isArray(items) || items.length === 0) return
+        const ids = items.map((value) => String(value)).filter((id) => id.length > 0)
+        if (ids.length === 0) return
+        setRemovedIds((previous) => {
+          const next = new Set(previous)
+          let changed = false
+          for (const id of ids) {
+            if (next.has(id)) continue
+            next.add(id)
+            changed = true
+          }
+          return changed ? next : previous
+        })
+      }
+
+      // A later successful archive must clear the tombstone, or the row stays hidden.
+      const forgetRemoved = (items) => {
+        setRemovedIds((previous) => forgetRemovedIds(previous, items))
+      }
+
       // The Host owns the archive set, and the DSH Workspace snapshot does not
       // necessarily follow a change this plugin made Host-side. One Host read per
       // page visit therefore drops the rows it no longer lists, so a page opened
       // after such a delete cannot keep showing it.
-      const reconciledOnMount = React.useRef(false)
+      //
+      // This effect must survive workspace-snapshot changes: reconcileArchive now
+      // only reads, but any unrelated snapshot update while the request is in flight
+      // used to cancel the result, and the one-shot flag then suppressed a retry.
+      const mountedRef = React.useRef(true)
       React.useEffect(() => {
-        if (!remoteReady || reconciledOnMount.current) return undefined
+        mountedRef.current = true
+        return () => {
+          mountedRef.current = false
+        }
+      }, [])
+      const mountReconcile = React.useRef({ started: false, done: false })
+      React.useEffect(() => {
+        const task = mountReconcile.current
+        if (!remoteReady || task.done || task.started) return undefined
         if (archivedIds.length === 0 || typeof actions.reconcileArchive !== 'function') return undefined
-        reconciledOnMount.current = true
-        const requested = archivedIds
-        let cancelled = false
+        task.started = true
         actions
-          .reconcileArchive(requested)
+          .reconcileArchive(archivedIds)
           .then((outcome) => {
-            if (cancelled || outcome?.ok !== true) return
+            if (!mountedRef.current) return
+            if (outcome?.ok !== true) {
+              task.started = false
+              return
+            }
+            task.done = true
             rememberRemoved(outcome.value?.removed)
           })
           .catch((error) => {
+            task.started = false
             console.warn('[session-archive] archive reconciliation failed', error)
           })
-        return () => {
-          cancelled = true
-        }
       }, [archivedIds, remoteReady])
 
       React.useEffect(() => {
@@ -1399,23 +1498,6 @@ window.__ModuleLoader__.load({
         })
       }
 
-      // Rows the Host confirmed as gone stay out of this page's archived list.
-      const rememberRemoved = (items) => {
-        if (!Array.isArray(items) || items.length === 0) return
-        const ids = items.map((value) => String(value)).filter((id) => id.length > 0)
-        if (ids.length === 0) return
-        setRemovedIds((previous) => {
-          const next = new Set(previous)
-          let changed = false
-          for (const id of ids) {
-            if (next.has(id)) continue
-            next.add(id)
-            changed = true
-          }
-          return changed ? next : previous
-        })
-      }
-
       const run = async (operation, action) => {
         setBusy(true)
         setStatus(null)
@@ -1454,6 +1536,7 @@ window.__ModuleLoader__.load({
           if (typeof actions.archiveOne !== 'function') return { ok: false, message: t('error.generic') }
           const running = new Set(rows.filter((row) => row.running === true).map((row) => row.id))
           const failed = []
+          const archived = []
           let success = 0
           let skipped = 0
           for (const id of ids) {
@@ -1462,36 +1545,28 @@ window.__ModuleLoader__.load({
               continue
             }
             const outcome = await actions.archiveOne(id)
-            if (outcome.ok) success += 1
-            else failed.push({ sessionId: id, code: outcome.code, message: outcome.message })
+            if (outcome.ok) {
+              success += 1
+              archived.push(id)
+            } else failed.push({ sessionId: id, code: outcome.code, message: outcome.message })
           }
           reportFailures('archive', failed)
+          forgetRemoved(archived)
           return { ok: true, value: { success, skipped, failed } }
         }, 'archive')
 
-      // Ask the Host first, then drop the confirmed rows: hiding them up front and
-      // restoring on refusal is what made the sidebar flash on every rejected click.
+      // Ask the Host first, then drop only the confirmed rows: hiding them up front
+      // and restoring on refusal is what made the sidebar flash on every rejected
+      // click. Only ids the Host reports as deleted or already absent may enter the
+      // page-local removal layer; the archived set is not proof of deletion.
       const remove = (ids) =>
         run(async () => {
-          const outcome = await runDeleteFlow(actions, ids, t)
-          const requested = Array.isArray(ids) ? ids.map(String) : []
-          const confirmed = outcome.ok && Array.isArray(outcome.value?.removed) ? outcome.value.removed : []
-          if (outcome.ok) {
-            rememberBlocked(outcome.value?.failed)
-            reportFailures('delete', outcome.value?.failed)
+          const { outcome, removed } = await deleteAndReconcile(actions, ids, t)
+          if (Array.isArray(outcome.value?.failed)) {
+            rememberBlocked(outcome.value.failed)
+            reportFailures('delete', outcome.value.failed)
           }
-          // An unreadable batch still leaves the Host's archive set as the only
-          // authority, so reconcile the ids the user asked for as well; a refusal
-          // keeps its rows because the Host still lists them as archived.
-          const reconciled =
-            typeof actions.reconcileArchive === 'function' && (confirmed.length > 0 || requested.length > 0)
-              ? await actions.reconcileArchive(confirmed.length > 0 ? confirmed : requested, {
-                  trustConfirmed: outcome.ok,
-                })
-              : { ok: false }
-          const gone =
-            reconciled?.ok === true && Array.isArray(reconciled.value?.removed) ? reconciled.value.removed : confirmed
-          if (gone.length > 0) rememberRemoved(gone)
+          if (removed.length > 0) rememberRemoved(removed)
           return outcome
         }, 'delete')
 
@@ -2007,54 +2082,37 @@ window.__ModuleLoader__.load({
         setAutoArchive: (enabled) => updateSettings({ autoArchiveEnabled: enabled }),
         setRetentionDays: (days) => updateSettings({ retentionDays: days }),
         sessionMeta: (ids) => callRemote({ action: 'sessionMeta', ids }),
-        /** Read the Host's authoritative archive and pin sets. */
-        archiveState: () => callRemote({ action: 'state' }),
         /**
          * Reconcile this page with the Host's archive set. The DSH Workspace
          * snapshot is what renders the archived list, and it does not necessarily
          * follow an archive-flag change this plugin made Host-side; the Host's own
-         * `state` answer is the authority. One `workspaces.unarchiveSession` call
-         * afterwards republishes the complete set into the DSH client model (a
-         * Host no-op for an id that is no longer archived), so the sidebar agrees
-         * with this page again.
-         * @param ids - Session ids to reconcile: the batch's confirmed removals, or
-         *   the ids the user asked to delete when the batch answer was unreadable.
-         * @param options - `trustConfirmed` allows falling back to `ids` when the
-         *   Host state read fails; only true for a batch the Host answered.
-         * @returns the ids this page may drop from its archived list.
+         * `state` answer is the authority. This action only reads: the page keeps
+         * the ids it may drop in its own removal layer, and DSH's Workspace Feed
+         * publishes archive-set changes to the sidebar on its own.
+         * @param ids - Session ids to reconcile; the delete flow passes only ids the
+         *   Host confirmed as deleted or already absent.
+         * @returns the ids this page may drop from its archived list, or an error
+         *   when the Host archive set cannot be read.
          */
-        async reconcileArchive(ids, options = {}) {
+        async reconcileArchive(ids) {
           const candidates = Array.isArray(ids)
             ? [...new Set(ids.map((value) => String(value)))].filter((id) => id.length > 0)
             : []
           if (candidates.length === 0) return { ok: true, value: { removed: [] } }
           const state = await callRemote({ action: 'state' })
-          let removed = []
-          if (state.ok && Array.isArray(state.value?.archivedSessionIds)) {
-            const archived = new Set(state.value.archivedSessionIds.map(String))
-            removed = candidates.filter((id) => !archived.has(id))
-          } else if (options.trustConfirmed === true) {
-            removed = candidates
+          if (!state.ok || !Array.isArray(state.value?.archivedSessionIds)) {
+            return { ok: false, error: state.error ?? { message: t('status.unknownResult') } }
           }
-          if (removed.length > 0) {
-            const workspaces = ctx.get('workspaces')
-            if (workspaces !== undefined && typeof workspaces.unarchiveSession === 'function') {
-              try {
-                await workspaces.unarchiveSession(removed[0])
-              } catch (error) {
-                console.warn('[session-archive] archive-set reconciliation failed', error)
-              }
-            }
-          }
-          return { ok: true, value: { removed } }
+          const archived = new Set(state.value.archivedSessionIds.map(String))
+          return { ok: true, value: { removed: candidates.filter((id) => !archived.has(id)) } }
         },
         /** Remove rows from the client session list incrementally (no full list refresh). */
         async removeSessionsFromList(ids) {
           if (!Array.isArray(ids) || ids.length === 0) return { ok: true }
           const sessions = ctx.get('sessions')
           if (sessions === undefined || typeof sessions.handleSessionRemoved !== 'function') {
-            // Hosts without incremental removal need no compensation: the archived
-            // view drops the confirmed rows through its own removal layer.
+            // Hosts without incremental removal need no compensation: both views
+            // drop the confirmed rows through their own removal layer.
             return { ok: true }
           }
           try {
@@ -2252,7 +2310,9 @@ window.__ModuleLoader__.load({
         currentMainSessionId,
         deleteBlockReason,
         runDeleteFlow,
+        deleteAndReconcile,
         filterRemovedIds,
+        forgetRemovedIds,
         summarizeOutcome,
         failureReasonText,
         actionErrorCode,
