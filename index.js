@@ -235,6 +235,13 @@ export function apply(ctx) {
 
   /**
    * Compute auto-archive candidates and, unless `dryRun`, archive them.
+   *
+   * `SessionSummary.agentAvailable` says whether the row currently owns a
+   * live Agent; every persisted Session that is not open in this process
+   * reports `false`. That is the normal state of an auto-archive candidate,
+   * not an "unavailable" Session, so it must never exclude a row. Actual
+   * activity is covered by `running` and the live `agents`/`sessions`
+   * checks below.
    * @param {boolean} dryRun
    * @returns {Promise<{candidates?: string[], archived?: number, failed?: Array<object>, error?: object}>}
    */
@@ -263,7 +270,7 @@ export function apply(ctx) {
         if (!isSafeSessionId(id)) continue
         if (item.running === true || item.blank === true) continue
         if (item.origin === 'subagent' || (item.parentSessionId !== undefined && item.parentSessionId !== null)) continue
-        if (item.formatStatus === 'migration-required' || item.agentAvailable === false) continue
+        if (item.formatStatus === 'migration-required') continue
         if (!Number.isFinite(item.updatedAt) || item.updatedAt <= 0 || item.updatedAt >= cutoff) continue
         if (archived.has(id) || pinned.has(id)) continue
         if (agents?.get?.(id) !== undefined || sessions?.get?.(id) !== undefined) continue

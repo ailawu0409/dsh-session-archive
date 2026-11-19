@@ -28,7 +28,7 @@ function boot(options, stateDir) {
     async archiveSession(id) {
       calls.archive.push(id)
       if (Array.isArray(options.failArchive) && options.failArchive.includes(id)) {
-        // DeepSeek Harness 0.2.2-rc.2/rc.3 report refused archive admission
+        // DeepSeek Harness 0.2.2-rc.5 reports refused archive admission
         // for work that is still running as this structured Remote error.
         const error = new Error('workspace/session-active: the session is running work')
         error.code = 'workspace/session-active'
@@ -196,17 +196,20 @@ async function testScanDryRunFilters() {
       async list() {
         return {
           items: [
-            { sessionId: 'session-old', updatedAt: now - 40 * day, running: false, blank: false },
+            // DeepSeek Harness 0.2.2-rc.5 reports every persisted Session
+            // without a live Agent as `agentAvailable: false`; that is the
+            // normal state of an auto-archive candidate, not an exclusion.
+            { sessionId: 'session-old', updatedAt: now - 40 * day, running: false, blank: false, agentAvailable: false, formatStatus: 'current' },
             { sessionId: 'session-running', updatedAt: now - 40 * day, running: true, blank: false },
             { sessionId: 'session-recent', updatedAt: now - day, running: false, blank: false },
             { sessionId: 'session-pinned', updatedAt: now - 40 * day, running: false, blank: false },
             { sessionId: 'session-archived', updatedAt: now - 40 * day, running: false, blank: false },
-            { sessionId: 'session-live', updatedAt: now - 40 * day, running: false, blank: false },
+            { sessionId: 'session-live', updatedAt: now - 40 * day, running: false, blank: false, agentAvailable: true, formatStatus: 'current' },
             { sessionId: 'session-blank', updatedAt: now - 40 * day, running: false, blank: true },
             { sessionId: 'session-subagent', updatedAt: now - 40 * day, running: false, blank: false, origin: 'subagent' },
-            // DeepSeek Harness 0.2.2-rc.2/rc.3 keep these Session Summary
-            // fields; each one excludes the row.
-            { sessionId: 'session-cold', updatedAt: now - 40 * day, running: false, blank: false, agentAvailable: false },
+            // Open in this process but without a live Agent: `agentAvailable`
+            // is false too, so only the live `sessions` check excludes it.
+            { sessionId: 'session-attached', updatedAt: now - 40 * day, running: false, blank: false, agentAvailable: false, formatStatus: 'current' },
             { sessionId: 'session-migrate', updatedAt: now - 40 * day, running: false, blank: false, formatStatus: 'migration-required' },
             { sessionId: 'session-child', updatedAt: now - 40 * day, running: false, blank: false, parentSessionId: 'session-parent' },
           ],
@@ -219,6 +222,7 @@ async function testScanDryRunFilters() {
         pinned: ['session-pinned'],
         archived: ['session-archived'],
         agents: { get: (id) => (id === 'session-live' ? { id } : undefined) },
+        sessions: { get: (id) => (id === 'session-attached' ? { id } : undefined) },
       },
       dir,
     )
@@ -264,7 +268,7 @@ async function testPermanentDelete() {
     )
     const result = await service.command({ action: 'delete', sessionIds: ['session-test'] })
     assert.deepEqual(result.deleted, ['session-test'])
-    // DeepSeek Harness 0.2.2-rc.2/rc.3 keep the same SessionPersistence.open(id,
+    // DeepSeek Harness 0.2.2-rc.5 keeps the same SessionPersistence.open(id,
     // access) contract: identity verification must never take write ownership.
     assert.deepEqual(openCalls, [{ id: 'session-test', access: 'read' }])
     assert.deepEqual(result.skipped, [])
@@ -540,7 +544,7 @@ async function testAuditRotation() {
 }
 
 /**
- * DeepSeek Harness 0.2.2-rc.3 adds an experimental DeepSeek chat import plugin
+ * DeepSeek Harness 0.2.2-rc.5 includes an experimental DeepSeek chat import plugin
  * that writes ordinary Sessions through SessionPersistence.create() with
  * randomUUID ids and attaches them to a Workspace. The archive plugin must keep
  * treating those Sessions as ordinary: readable metadata, normal retention
@@ -632,7 +636,7 @@ async function testRc3ImportedSessionsDelete() {
 }
 
 /**
- * DeepSeek Harness 0.2.2-rc.2/rc.3 archive admission can refuse a candidate the
+ * DeepSeek Harness 0.2.2-rc.5 archive admission can refuse a candidate the
  * scan read as idle (running work behind the Session). The scan must record that
  * id as an archive failure and keep archiving the rest of the batch.
  */
@@ -649,8 +653,8 @@ async function testScanContinuesPastArchiveRefusal() {
       async list() {
         return {
           items: [
-            { sessionId: 'session-ok', updatedAt: now - 40 * day, running: false, blank: false },
-            { sessionId: 'session-busy', updatedAt: now - 40 * day, running: false, blank: false },
+            { sessionId: 'session-ok', updatedAt: now - 40 * day, running: false, blank: false, agentAvailable: false, formatStatus: 'current' },
+            { sessionId: 'session-busy', updatedAt: now - 40 * day, running: false, blank: false, agentAvailable: false, formatStatus: 'current' },
           ],
         }
       },

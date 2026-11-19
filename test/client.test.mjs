@@ -166,10 +166,10 @@ assert.ok(icon.children[0].props.d.includes('M1.75 2.75'))
 assert.equal(iconRegistration.component({}).props.width, 16, 'a missing host size falls back to 16')
 assert.equal(iconRegistration.component({ size: 0 }).props.width, 16, 'an invalid host size falls back to 16')
 
-// DeepSeek Harness 0.2.2-rc.2/rc.3 render settings.section.icon inline for the
-// nav row and hand it { size: 16, active }; the shell owns the chrome, so the
+// DeepSeek Harness 0.2.2-rc.5 renders settings.section.icon inline for the
+// nav row and hands it { size: 16, active }; the shell owns the chrome, so the
 // registration carries nothing but its slot name and the target section id.
-// (Settings slot contracts are byte-identical between rc.2 and rc.3.)
+// (Settings slot contracts are byte-identical between rc.3 and rc.5.)
 assert.deepEqual(
   Object.keys(iconRegistration.options).sort(),
   ['id', 'name'],
@@ -180,7 +180,7 @@ assert.equal(
   16,
   'the icon owner props render the requested edge',
 )
-// The section registration keeps exactly the nav identity the rc.3 shell
+// The section registration keeps exactly the nav identity the rc.5 shell
 // projects: the id drives section filtering, order places the row, and the
 // label resolves through the registration's locale namespace.
 assert.deepEqual(
@@ -236,7 +236,7 @@ const clientSource = await readFile(new URL('../client.js', import.meta.url), 'u
 // Every --dsw-* token the plugin styles with must be one the host theme actually
 // defines; an unknown name silently falls back to body text instead of failing.
 // This guard is what caught the undefined --dsw-alias-label-error in 0.1.2.
-// The list below is the dsh-client-ui-theme 0.2.2-rc.3 token set this plugin uses.
+// The list below is the dsh-client-ui-theme 0.2.2-rc.5 token set this plugin uses.
 const CLIENT_TOKENS = [
   '--dsw-alias-bg-layer-1',
   '--dsw-alias-bg-layer-2',
@@ -277,6 +277,7 @@ const CLIENT_TOKENS = [
 ]
 const usedTokens = [...new Set(clientSource.match(/--dsw-[a-z0-9-]+/g) ?? [])].sort()
 assert.deepEqual(usedTokens, [...CLIENT_TOKENS].sort(), 'client.js styles only with host-defined --dsw-* tokens')
+
 const zhDictionary = localeRegistrations[0].dictionaries.zh
 for (const match of clientSource.matchAll(/\bt\('([^']+)'/g)) {
   assert.ok(match[1] in zhDictionary, `missing zh dictionary key: ${match[1]}`)

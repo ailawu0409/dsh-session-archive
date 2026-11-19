@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-11-19
+
+### Fixed
+
+- Automatic archiving now considers closed persisted Sessions on every supported DeepSeek Harness 0.2.2 release (verified on 0.2.2-rc.5). `SessionSummary.agentAvailable` only reports whether a Session currently owns a live Agent, so every persisted Session without an open Agent was being excluded and a scan could never produce a candidate. Users who already enabled automatic archiving will see the first scan archive up to 50 Sessions older than the retention cutoff.
+
+### Changed
+
+- Verified DeepSeek Harness 0.2.2-rc.5. Every contract this plugin uses (Settings section slots and owner props, Remote/Typert registration, Workspace registry, Session list fields, Session persistence and query, client module loading, and all `--dsw-*` design tokens) is unchanged between 0.2.2-rc.3 and 0.2.2-rc.5; no Remote or UI contract migration was required.
+
 ## [0.1.5] - 2026-11-18
 
 ### Fixed
@@ -66,6 +76,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Automatic archiving is disabled by default.
 - Permanent deletion refuses unsafe IDs and live or pinned sessions.
 
+[0.1.6]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.6
 [0.1.5]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.5
 [0.1.4]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.4
 [0.1.3]: https://github.com/ailawu0409/dsh-session-archive/releases/tag/v0.1.3

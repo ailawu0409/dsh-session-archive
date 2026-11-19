@@ -16,7 +16,7 @@ A community plugin for DeepSeek Harness that adds a session archive management s
 - Archive or restore individual sessions, or use a project group's menu to act on all of its currently visible sessions.
 - The unarchived view has a page-level **Archive all** button; the archived view has a page-level **Delete all** button. Individual sessions and project groups also offer **Delete** in both views.
 - Automatically archive inactive sessions after a retention period. Automatic archiving is **off by default** and never deletes session data.
-- Skip running, live, pinned, blank, subagent or otherwise parented, unavailable, migration-required, and already archived sessions during automatic scans.
+- Skip running, live, pinned, blank, subagent or otherwise parented, migration-required, and already archived sessions during automatic scans. Closed persisted sessions that are not open in the app remain normal candidates.
 - Search by session title, id, or project name; filter by project; sort by last update or creation time; collapse or expand project groups.
 - Delete one session, a project group, or all deletable archived sessions through a confirmation dialog.
 - Validate the session id, live/pinned state, log-root match, duplicate log directories, and stored log identity before permanent deletion.
@@ -26,8 +26,8 @@ A community plugin for DeepSeek Harness that adds a session archive management s
 
 ## Compatibility
 
-- DeepSeek Harness desktop 0.2.2-rc.3 (verified) with profile plugin and Settings extension support. The plugin relies only on contracts that are unchanged since 0.2.2-rc.1, so rc.1, rc.2 and rc.3 behave identically. On 0.2.2 and newer, the plugin registers its Settings navigation icon through the official `settings.section.icon` slot; older hosts keep the default glyph without error.
-- Sessions created by DeepSeek Harness 0.2.2-rc.3's experimental DeepSeek chat import plugin are ordinary sessions: they follow normal retention, archive, restore, and permanent-delete rules.
+- DeepSeek Harness desktop 0.2.2-rc.5 (verified) with profile plugin and Settings extension support. The plugin relies only on contracts that are unchanged since 0.2.2-rc.1, so rc.1 through rc.5 behave identically. On 0.2.2 and newer, the plugin registers its Settings navigation icon through the official `settings.section.icon` slot; older hosts keep the default glyph without error.
+- Sessions created by DeepSeek Harness 0.2.2's experimental DeepSeek chat import plugin are ordinary sessions: they follow normal retention, archive, restore, and permanent-delete rules.
 - Node.js 22 or newer for local development and tests. CI runs Node.js 22 and 24; there are no third-party runtime dependencies.
 - The Settings UI is available in English and Chinese. Additional host languages introduced in 0.2.2 fall back to English for this plugin's text.
 - Only install one copy of this plugin. Older development builds used the package name `@local/session-archive`; remove that build before installing this one.
@@ -47,7 +47,7 @@ Restart DeepSeek Harness, then open **Settings → Archive management** (归档�
 To install a specific release, use its tag, for example:
 
 ```sh
-dsh plugin --profile desktop add github:ailawu0409/dsh-session-archive#v0.1.5
+dsh plugin --profile desktop add github:ailawu0409/dsh-session-archive#v0.1.6
 ```
 
 ### Upgrade
@@ -81,7 +81,7 @@ Automatic archiving is **off by default**. Enable it in Settings and choose a re
 
 The Host scans only while DeepSeek Harness is running. After automatic archiving is enabled (or at startup when it is already enabled), the first scan runs within about one minute and subsequent scans run every 60 minutes by default. `scanIntervalMinutes` is an advanced Host setting and is not exposed in Settings; see [Advanced Host settings](#advanced-host-settings).
 
-A session must be safely named and older than the retention cutoff before it becomes a candidate. Running, live, pinned, blank, subagent or otherwise parented, unavailable, migration-required, and already archived sessions are excluded. Each scan processes at most 50 candidates. Scans only archive sessions; they never delete session logs. All mutating work (scan, settings, archive, unarchive, and delete) is serialized so operations cannot interleave.
+A session must be safely named and older than the retention cutoff before it becomes a candidate. Running, live, pinned, blank, subagent or otherwise parented, migration-required, and already archived sessions are excluded; a persisted session that is merely closed (not open in the app) remains a normal candidate. Each scan processes at most 50 candidates. Scans only archive sessions; they never delete session logs. All mutating work (scan, settings, archive, unarchive, and delete) is serialized so operations cannot interleave.
 
 ### Browsing, archiving, and restoring
 
@@ -138,7 +138,7 @@ The file also contains an internal `version` field; leave it in place. Malformed
 
 - **Settings → Archive management is missing:** confirm the package is installed in the active profile, remove any old `@local/session-archive` build, and restart DeepSeek Harness. The dedicated navigation icon appears on DeepSeek Harness 0.2.2 and newer; older hosts use the default glyph.
 - **“Archive management is unavailable”:** the plugin could not mount its Remote service. Refresh the page or restart DeepSeek Harness, and verify that the host version and profile plugin are supported.
-- **Automatic archiving does not run:** it is off by default; the app must be running; sessions must be older than the retention period and must not be running, live, pinned, blank, parented, unavailable, migration-required, or already archived. Each scan is limited to 50 candidates.
+- **Automatic archiving does not run:** it is off by default; the app must be running; sessions must be older than the retention period and must not be running, live, pinned, blank, parented, migration-required, or already archived. Closed persisted sessions are valid candidates. Each scan is limited to 50 candidates.
 - **A session cannot be deleted:** pinned and in-use sessions are refused. The plugin also refuses when no log root can be found, when more than one log directory matches, or when the stored log header belongs to another session. Set `sessionLogRoot` only when you know the correct DSH JSONL root, and inspect `plugin-state/session-archive-audit.log` for the recorded outcome.
 - **A deleted session still appears in the sidebar:** close and reopen Settings to trigger the page reconciliation, or refresh the session list. If it persists, restart DeepSeek Harness and check the audit log.
 
